@@ -16,11 +16,16 @@ import { ReportsView } from './components/reports/ReportsView.js';
 import { BudgetManagerView } from './components/budgets/BudgetManagerView.js';
 import { PayrollView } from './components/payroll/PayrollView.js';
 import { SettingsView } from './components/SectionViews.js';
+import { StyleGuideView } from './views/StyleGuideView.js';
 
 export const App: React.FC = () => {
   const { isLocked } = useAuth();
   const { isDemoMode, toggleDemoMode } = useDemo();
-  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<NavTab>(() => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash === 'style-guide') return 'style-guide';
+    return 'dashboard';
+  });
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
 
   const [isDark, setIsDark] = useState(() => {
@@ -85,6 +90,7 @@ export const App: React.FC = () => {
           {activeTab === 'payroll' && <PayrollView />}
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'settings' && <SettingsView />}
+          {activeTab === 'style-guide' && <StyleGuideView />}
         </main>
       </div>
 

@@ -11,6 +11,7 @@ import {
   Settings,
   Briefcase,
   PieChart,
+  Palette,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useLedger } from '../context/LedgerContext.js';
@@ -27,7 +28,8 @@ export type NavTab =
   | 'payroll'
   | 'reports'
   | 'doctor'
-  | 'settings';
+  | 'settings'
+  | 'style-guide';
 
 interface Props {
   activeTab: NavTab;
@@ -116,6 +118,12 @@ export const Navigation: React.FC<Props> = ({ activeTab, onSelectTab }) => {
       label: 'System & Audit',
       icon: Settings,
       visible: hasPermission(role, 'admin:manage_users') || hasPermission(role, 'audit:view_log'),
+    },
+    {
+      id: 'style-guide',
+      label: 'Style Guide',
+      icon: Palette,
+      visible: true,
     },
   ];
 

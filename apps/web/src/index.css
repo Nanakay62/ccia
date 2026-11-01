@@ -2,39 +2,175 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Surface Tokens (Paper & Ledger Tone) */
+  --surface-ground: #f8f6f0;        /* warm paper off-white ground */
+  --surface-panel: #ffffff;         /* clean white panel */
+  --surface-subtle: #f2efe7;        /* warm tinted row/header background */
+  --surface-border: #e3ded3;        /* hairline border */
+  --surface-border-subtle: #edeae2; /* delicate row divider */
+
+  /* Text Tokens */
+  --text-primary: #1c1917;          /* near-black for primary text */
+  --text-secondary: #57534e;        /* warm mid-grey, >= 4.5:1 contrast ratio */
+  --text-muted: #78716c;            /* tertiary / caption */
+  --text-inverse: #ffffff;
+
+  /* Accent (Single deep color: Ecclesiastical Forest Green) */
+  --accent: #1e4620;                /* deep forest green */
+  --accent-hover: #163618;
+  --accent-subtle: #eef5ef;         /* light accent wash */
+  --accent-foreground: #ffffff;
+
+  /* Gold / Brass Accent Mark */
+  --gold: #996515;                  /* understated brass/gold mark */
+  --gold-subtle: #fef9ed;
+
+  /* Status Tokens (paired with text or icon) */
+  --status-green: #15803d;
+  --status-green-bg: #edf7ee;
+  --status-amber: #b45309;
+  --status-amber-bg: #fff8eb;
+  --status-red: #b91c1c;
+  --status-red-bg: #fdf2f2;
+  --status-grey: #64748b;
+  --status-grey-bg: #f1f5f9;
+
+  /* Fund Colors (Accessible, distinct, muted) */
+  --fund-gen: #1e3a8a;              /* General Fund: Slate Navy */
+  --fund-bld: #b45309;              /* Building Fund: Ochre/Bronze */
+  --fund-mis: #15803d;              /* Missions & Outreach: Forest Green */
+  --fund-wel: #7e22ce;              /* Welfare & Benevolence: Muted Purple */
+  --fund-yth: #0f766e;              /* Youth Ministry: Deep Teal */
+
+  /* Corner Radius (Max 6px per spec) */
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  /* Typography Stacks (Bundled locally, offline-first) */
+  --font-serif: 'Georgia', 'Cambria', 'Palatino Linotype', 'Times New Roman', serif;
+  --font-sans: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.dark {
+  /* Warm Dark Grey (not blue-black) */
+  --surface-ground: #1c1c1a;        /* warm charcoal ground */
+  --surface-panel: #242422;         /* warm dark panel */
+  --surface-subtle: #2d2d29;        /* warm header/stripe */
+  --surface-border: #3c3c36;        /* hairline border */
+  --surface-border-subtle: #33332d; /* delicate row divider */
+
+  /* Text Tokens */
+  --text-primary: #f5f5f4;          /* crisp warm off-white */
+  --text-secondary: #a8a29e;        /* warm mid-grey contrast */
+  --text-muted: #78716c;
+  --text-inverse: #1c1917;
+
+  /* Accent in Dark Mode */
+  --accent: #2e7d32;                /* accessible vibrant green */
+  --accent-hover: #388e3c;
+  --accent-subtle: #192e1a;
+  --accent-foreground: #ffffff;
+
+  /* Gold in Dark Mode */
+  --gold: #d4a343;
+  --gold-subtle: #2d2617;
+
+  /* Status Tokens in Dark */
+  --status-green: #4ade80;
+  --status-green-bg: #142a17;
+  --status-amber: #fbbf24;
+  --status-amber-bg: #32230a;
+  --status-red: #f87171;
+  --status-red-bg: #341212;
+  --status-grey: #94a3b8;
+  --status-grey-bg: #1e293b;
+
+  /* Fund Colors in Dark */
+  --fund-gen: #60a5fa;
+  --fund-bld: #f59e0b;
+  --fund-mis: #4ade80;
+  --fund-wel: #c084fc;
+  --fund-yth: #2dd4bf;
+}
+
 @layer base {
   body {
     -webkit-tap-highlight-color: transparent;
     user-select: none;
-    font-family: 'Roboto', 'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background-color: var(--surface-ground);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 16px; /* Minimum body size 16px per spec */
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
+
   input, textarea, select {
     user-select: text;
   }
+
+  /* Headings: Serif face for ledger/book feel */
+  h1, h2, h3, .font-heading {
+    font-family: var(--font-serif);
+    color: var(--text-primary);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
 }
 
-/* Financial numeric formatting utilities */
+/* Tabular lining figures for money and numeric tables */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
   -webkit-font-feature-settings: "tnum" 1;
   font-feature-settings: "tnum" 1;
 }
 
-.font-numeric {
-  font-family: 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
-  font-variant-numeric: tabular-nums;
-  -webkit-font-feature-settings: "tnum" 1;
-  font-feature-settings: "tnum" 1;
+/* Hairline rule divider */
+.ledger-rule {
+  height: 1px;
+  background-color: var(--surface-border);
+  border: none;
+}
+
+.ledger-rule-subtle {
+  height: 1px;
+  background-color: var(--surface-border-subtle);
+  border: none;
+}
+
+/* Gold accent underline */
+.gold-rule {
+  height: 2px;
+  background-color: var(--gold);
+  border: none;
+}
+
+/* Micro-transitions (150ms per spec) */
+* {
+  transition-property: background-color, border-color, color, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Print stylesheets for vouchers and reports */
 @media print {
-  nav, header, .no-print {
+  nav, header, aside, .no-print {
     display: none !important;
   }
   body {
     background: white !important;
     color: black !important;
+    font-size: 12pt !important;
   }
   .print-only {
     display: block !important;
