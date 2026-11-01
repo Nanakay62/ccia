@@ -1,0 +1,28 @@
+node_modules/
+dist/
+build/
+.turbo/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# PowerSync & SQLite local files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,23 @@
+{
+  "name": "church-accounting-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade, offline-first Progressive Web App for church accounting in Accra, Ghana",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter=@church/domain build && pnpm --filter=@church/db build && pnpm --filter=@church/web build",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test -- --coverage",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter=@church/web dev",
+    "db:migrate": "pnpm --filter=@church/db migrate"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

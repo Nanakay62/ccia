@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  input, textarea, select {
+    user-select: text;
+  }
+}
+
+/* Print stylesheets for vouchers and reports */
+@media print {
+  nav, header, .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}

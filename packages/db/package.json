@@ -1,0 +1,23 @@
+{
+  "name": "@church/db",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@church/domain": "workspace:*",
+    "@powersync/web": "^2.5.0",
+    "@supabase/supabase-js": "^2.118.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

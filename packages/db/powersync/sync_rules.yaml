@@ -1,0 +1,96 @@
+# PowerSync Sync Rules for Church Accounting System (Accra, Ghana)
+# Enforces role-based sync boundaries and member giving privacy offline.
+
+bucket_definitions:
+  # Reference data synced to all active users
+  reference_data:
+    data:
+      - SELECT * FROM branches WHERE id = request.user_branch_id
+      - SELECT * FROM funds WHERE branch_id = request.user_branch_id AND is_active = true
+      - SELECT * FROM accounts WHERE branch_id = request.user_branch_id AND is_active = true
+      - SELECT * FROM periods WHERE branch_id = request.user_branch_id
+      - SELECT * FROM exchange_rates WHERE branch_id = request.user_branch_id
+      - SELECT * FROM roles
+      - SELECT id, branch_id, email, full_name, role, department_id, is_active FROM users_profile WHERE branch_id = request.user_branch_id
+
+  # Ledger and financial transactions for financial managers (Treasurer, Finance Secretary, Pastor / Elder, Auditor)
+  financial_management:
+    parameters:
+      - SELECT request.user_role IN ('Treasurer', 'Finance Secretary', 'Pastor / Elder', 'Auditor') as has_access
+    data:
+      - SELECT * FROM journal_entries WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM journal_lines WHERE journal_entry_id IN (
+          SELECT id FROM journal_entries WHERE branch_id = request.user_branch_id
+        ) AND bucket.has_access
+      - SELECT * FROM vouchers WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM vendors WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM assets WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM staff WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM payroll_runs WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM budgets WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM budget_lines WHERE budget_id IN (
+          SELECT id FROM budgets WHERE branch_id = request.user_branch_id
+        ) AND bucket.has_access
+
+  # Member directory and giving (Treasurer, Finance Secretary, Pastor / Elder, Auditor)
+  # Restricted privacy bucket!
+  member_giving_private:
+    parameters:
+      - SELECT request.user_role IN ('Treasurer', 'Finance Secretary', 'Pastor / Elder', 'Auditor') as has_access
+    data:
+      - SELECT * FROM members WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM pledges WHERE branch_id = request.user_branch_id AND bucket.has_access
+
+  # General member list for counters (name & id only, no sensitive giving contact)
+  member_counter_directory:
+    parameters:
+      - SELECT request.user_role = 'Counter' as is_counter
+    data:
+      - SELECT id, branch_id, member_number, full_name, department, status, created_at, updated_at
+        FROM members WHERE branch_id = request.user_branch_id AND bucket.is_counter
+
+  # Counting sheets for Counters, Treasurer, Finance Secretary
+  counting_sheets_data:
+    parameters:
+      - SELECT request.user_role IN ('Counter', 'Treasurer', 'Finance Secretary', 'Pastor / Elder', 'Auditor') as has_access
+    data:
+      - SELECT * FROM counting_sheets WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM counting_sheet_lines WHERE counting_sheet_id IN (
+          SELECT id FROM counting_sheets WHERE branch_id = request.user_branch_id
+        ) AND bucket.has_access
+
+  # Department Head scoped requisitions and budgets
+  department_head_data:
+    parameters:
+      - SELECT request.user_role = 'Department Head' as is_dept_head
+    data:
+      - SELECT * FROM requisitions WHERE branch_id = request.user_branch_id AND department_id = request.user_dept_id AND bucket.is_dept_head
+      - SELECT * FROM budget_lines WHERE department_id = request.user_dept_id AND bucket.is_dept_head
+
+  # All requisitions for leadership
+  leadership_requisitions:
+    parameters:
+      - SELECT request.user_role IN ('Treasurer', 'Finance Secretary', 'Pastor / Elder', 'Auditor') as has_access
+    data:
+      - SELECT * FROM requisitions WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM requisition_approvals WHERE requisition_id IN (
+          SELECT id FROM requisitions WHERE branch_id = request.user_branch_id
+        ) AND bucket.has_access
+
+  # Audit log (Auditor and Treasurer only)
+  audit_and_diagnostics:
+    parameters:
+      - SELECT request.user_role IN ('Treasurer', 'Auditor') as has_access
+    data:
+      - SELECT * FROM audit_log WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM integrity_runs WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM integrity_findings WHERE run_id IN (
+          SELECT id FROM integrity_runs WHERE branch_id = request.user_branch_id
+        ) AND bucket.has_access
+
+  # Sync rejections for Treasurer attention
+  treasurer_attention:
+    parameters:
+      - SELECT request.user_role = 'Treasurer' as is_treasurer
+    data:
+      - SELECT * FROM sync_rejections WHERE branch_id = request.user_branch_id AND bucket.is_treasurer

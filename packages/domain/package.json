@@ -1,0 +1,24 @@
+{
+  "name": "@church/domain",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "big.js": "^7.0.1"
+  },
+  "devDependencies": {
+    "@types/big.js": "^6.2.2",
+    "@types/node": "^22.13.0",
+    "fast-check": "^4.10.2",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}
