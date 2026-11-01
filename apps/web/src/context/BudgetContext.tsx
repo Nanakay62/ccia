@@ -203,10 +203,16 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   return <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>;
 };
 
+const fallbackBudgetContext: BudgetContextValue = {
+  budgets: [INITIAL_BUDGET],
+  activeBudget: INITIAL_BUDGET,
+  setActiveBudgetId: () => {},
+  createNewBudget: () => INITIAL_BUDGET,
+  applyRevision: () => INITIAL_BUDGET,
+  getUtilization: () => [],
+};
+
 export function useBudget(): BudgetContextValue {
   const context = useContext(BudgetContext);
-  if (!context) {
-    throw new Error('useBudget must be used within a BudgetProvider');
-  }
-  return context;
+  return context || fallbackBudgetContext;
 }
