@@ -11,3 +11,4 @@ export * from './sync/connector.js';
 export * from './sync/backup.js';
 export * from './giving/index.js';
 export * from './expenses/index.js';
+export * from './reports/index.js';

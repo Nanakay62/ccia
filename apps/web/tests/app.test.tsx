@@ -5,6 +5,9 @@ import { App } from '../src/App.js';
 import { AuthProvider } from '../src/context/AuthContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { LedgerProvider } from '../src/context/LedgerContext.js';
+import { GivingProvider } from '../src/context/GivingContext.js';
+import { ExpensesProvider } from '../src/context/ExpensesContext.js';
+import { ReportsProvider } from '../src/context/ReportsContext.js';
 
 describe('Web App Shell, Core Ledger & TB Doctor', () => {
   beforeEach(() => {
@@ -16,7 +19,13 @@ describe('Web App Shell, Core Ledger & TB Doctor', () => {
       <AuthProvider>
         <SyncProvider>
           <LedgerProvider>
-            <App />
+            <GivingProvider>
+              <ExpensesProvider>
+                <ReportsProvider>
+                  <App />
+                </ReportsProvider>
+              </ExpensesProvider>
+            </GivingProvider>
           </LedgerProvider>
         </SyncProvider>
       </AuthProvider>

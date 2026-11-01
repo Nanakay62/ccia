@@ -6,6 +6,7 @@ import { SyncProvider } from './context/SyncContext.js';
 import { LedgerProvider } from './context/LedgerContext.js';
 import { GivingProvider } from './context/GivingContext.js';
 import { ExpensesProvider } from './context/ExpensesContext.js';
+import { ReportsProvider } from './context/ReportsContext.js';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -15,7 +16,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <LedgerProvider>
           <GivingProvider>
             <ExpensesProvider>
-              <App />
+              <ReportsProvider>
+                <App />
+              </ReportsProvider>
             </ExpensesProvider>
           </GivingProvider>
         </LedgerProvider>

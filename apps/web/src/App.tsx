@@ -5,17 +5,15 @@ import { SyncIndicator } from './components/SyncIndicator.js';
 import { Navigation, type NavTab } from './components/Navigation.js';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal.js';
 import { LockScreen } from './components/LockScreen.js';
-import { DashboardView } from './components/DashboardView.js';
+import { DashboardOverview } from './components/dashboard/DashboardOverview.js';
 import { LedgerView } from './components/ledger/LedgerView.js';
 import { TrialBalanceView } from './components/ledger/TrialBalanceView.js';
 import { DoctorView } from './components/doctor/DoctorView.js';
 import { CountingSheetView } from './components/giving/CountingSheetView.js';
 import { GivingDirectoryView } from './components/giving/GivingDirectoryView.js';
 import { ExpensesView } from './components/expenses/ExpensesView.js';
-import {
-  ReportsView,
-  SettingsView,
-} from './components/SectionViews.js';
+import { ReportsView } from './components/reports/ReportsView.js';
+import { SettingsView } from './components/SectionViews.js';
 
 export const App: React.FC = () => {
   const { isLocked } = useAuth();
@@ -53,7 +51,7 @@ export const App: React.FC = () => {
         <Navigation activeTab={activeTab} onSelectTab={setActiveTab} />
 
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
-          {activeTab === 'dashboard' && <DashboardView onNavigate={setActiveTab} />}
+          {activeTab === 'dashboard' && <DashboardOverview onNavigate={(t) => setActiveTab(t as NavTab)} />}
           {activeTab === 'ledger' && <LedgerView />}
           {activeTab === 'trial-balance' && (
             <TrialBalanceView onNavigateToDoctor={() => setActiveTab('doctor')} />
