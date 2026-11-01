@@ -36,6 +36,7 @@ import { BudgetActualSection, BudgetLineItem } from './BudgetActualSection.js';
 import { RecentTransactionsSection, RecentTransactionItem } from './RecentTransactionsSection.js';
 import { PledgesSection, CampaignPledgeItem } from './PledgesSection.js';
 import { QuickActionsSection } from './QuickActionsSection.js';
+import { DemoWizardCard } from './DemoWizardCard.js';
 import {
   CounterDashboard,
   PastorElderDashboard,
@@ -379,6 +380,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
           usdRate={usdRate}
           rateDate={rateDate}
         />
+        <DemoWizardCard onNavigate={onNavigate} />
         <CounterDashboard
           currency={currency}
           onNavigate={onNavigate}
@@ -401,6 +403,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
           usdRate={usdRate}
           rateDate={rateDate}
         />
+        <DemoWizardCard onNavigate={onNavigate} />
         <StatementStrip items={statementItems} displayCurrency={currency} exchangeRate={usdRate} />
         <PastorElderDashboard
           currency={currency}
@@ -436,6 +439,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
           usdRate={usdRate}
           rateDate={rateDate}
         />
+        <DemoWizardCard onNavigate={onNavigate} />
         <StatementStrip items={statementItems} displayCurrency={currency} exchangeRate={usdRate} />
         <AuditorDashboard
           currency={currency}
@@ -459,6 +463,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
           usdRate={usdRate}
           rateDate={rateDate}
         />
+        <DemoWizardCard onNavigate={onNavigate} />
         <DeptHeadDashboard
           currency={currency}
           onNavigate={onNavigate}
@@ -484,6 +489,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
           usdRate={usdRate}
           rateDate={rateDate}
         />
+        <DemoWizardCard onNavigate={onNavigate} />
         <AdminDashboard currency={currency} onNavigate={onNavigate} />
       </div>
     );
@@ -503,6 +509,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onNavigate
         usdRate={usdRate}
         rateDate={rateDate}
       />
+
+      {/* Demo Sandbox Walkthrough Card (Section 5.2) */}
+      <DemoWizardCard onNavigate={onNavigate} />
 
       {/* Statement Strip: 4 Key Figures in 1 Panel */}
       <StatementStrip items={statementItems} displayCurrency={currency} exchangeRate={usdRate} />

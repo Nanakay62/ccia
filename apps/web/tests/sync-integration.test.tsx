@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PowerSyncUploadConnector } from '../src/services/powersync-connector.js';
 import type { SyncQueueItem } from '@church/domain';
 import { AuthProvider } from '../src/context/AuthContext.js';
+import { DemoProvider } from '../src/context/DemoContext.js';
 import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { SyncIndicator } from '../src/components/SyncIndicator.js';
@@ -128,11 +129,13 @@ describe('Phase 3: Web UI Sync & Backup Components', () => {
   it('renders SyncIndicator and opens Needs Attention modal when rejections exist', async () => {
     render(
       <AuthProvider>
-        <LedgerProvider>
-          <SyncProvider>
-            <SyncIndicator />
-          </SyncProvider>
-        </LedgerProvider>
+        <DemoProvider>
+          <LedgerProvider>
+            <SyncProvider>
+              <SyncIndicator />
+            </SyncProvider>
+          </LedgerProvider>
+        </DemoProvider>
       </AuthProvider>
     );
 
@@ -153,11 +156,13 @@ describe('Phase 3: Web UI Sync & Backup Components', () => {
   it('renders BackupRestoreCard and provides multi-device simulation controls', async () => {
     render(
       <AuthProvider>
-        <LedgerProvider>
-          <SyncProvider>
-            <BackupRestoreCard />
-          </SyncProvider>
-        </LedgerProvider>
+        <DemoProvider>
+          <LedgerProvider>
+            <SyncProvider>
+              <BackupRestoreCard />
+            </SyncProvider>
+          </LedgerProvider>
+        </DemoProvider>
       </AuthProvider>
     );
 

@@ -23,10 +23,11 @@ import { BudgetManagerView } from './components/budgets/BudgetManagerView.js';
 import { PayrollView } from './components/payroll/PayrollView.js';
 import { SettingsView } from './components/SectionViews.js';
 import { StyleGuideView } from './views/StyleGuideView.js';
+import { DemoModals } from './components/demo/DemoModals.js';
 
 export const App: React.FC = () => {
   const { isLocked, currentUser } = useAuth();
-  const { isDemoMode, toggleDemoMode } = useDemo();
+  const { isDemoMode, requestExitDemoMode, isWizardDismissed, restoreWizard } = useDemo();
   const { trialBalance } = useLedger();
   const { triggerSync, isSyncing, isOnline, pendingUploadCount, needsAttentionCount } = useSync();
 
@@ -66,20 +67,28 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--surface-ground)] text-[var(--text-primary)] transition-colors">
-      {/* Demo Warning Strip across top of every screen (Section 5.2) */}
+      {/* Demo Warning Strip across top of every screen with dark text (Section 5.3) */}
       {isDemoMode && (
-        <div className="bg-[var(--status-amber)] text-white px-4 py-1.5 text-[13px] flex items-center justify-between font-medium shadow-sm z-50 select-none animate-fadeIn">
-          <div className="flex items-center gap-2">
-            <span className="px-1.5 py-0.2 rounded text-[10px] font-black uppercase tracking-wider bg-black/25">
+        <div className="bg-[#f59e0b] text-[#1c1917] px-4 py-1.5 text-[13px] flex items-center justify-between font-medium shadow-sm z-50 select-none">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-black/15 text-black">
               Demo Mode Active:
             </span>
             <span>
-              300 Ghanaian church members loaded. DEMO MODE: sample data only, nothing here is real. Live church records remain safely untouched.
+              300 Ghanaian church members loaded. DEMO MODE: Changes will not be saved to live accounts.
             </span>
+            {isWizardDismissed && (
+              <button
+                onClick={restoreWizard}
+                className="underline text-xs ml-2 hover:text-black font-semibold text-black/80"
+              >
+                Show walkthrough card
+              </button>
+            )}
           </div>
           <button
-            onClick={toggleDemoMode}
-            className="px-2.5 py-0.5 rounded text-xs font-semibold bg-white/20 hover:bg-white/30 text-white transition border border-white/30"
+            onClick={requestExitDemoMode}
+            className="px-2.5 py-0.5 rounded text-xs font-semibold bg-black/15 hover:bg-black/25 text-black transition border border-black/20 shrink-0"
             aria-label="Exit Demo Mode"
           >
             Exit Demo Mode
@@ -242,6 +251,9 @@ export const App: React.FC = () => {
         isOpen={isRoleModalOpen}
         onClose={() => setIsRoleModalOpen(false)}
       />
+
+      {/* Demo Exit and Reset Confirmation Dialogs (Section 5.5) */}
+      <DemoModals />
     </div>
   );
 };

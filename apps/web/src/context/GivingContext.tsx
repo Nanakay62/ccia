@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import type {
   Member,
   Pledge,
@@ -23,6 +23,7 @@ import { useAuth } from './AuthContext.js';
 import { useLedger } from './LedgerContext.js';
 import { useSync } from './SyncContext.js';
 import { useDemo } from './DemoContext.js';
+import { loadFromStore, saveToStore } from '../utils/database.js';
 
 export const SEED_MEMBERS: Member[] = [
   {
@@ -289,6 +290,12 @@ interface GivingContextType {
     secondCounterName: string;
     exchangeRateUsd?: string;
   }) => { sheet: CountingSheet; journalEntryId: string };
+  signDraftCountingSheet: (params: {
+    sheetId: string;
+    secondCounterId: string;
+    secondCounterName: string;
+    exchangeRateUsd?: string;
+  }) => { sheet: CountingSheet; journalEntryId: string };
   getMaskedGivingRecords: () => MemberGivingRecord[];
   getMaskedPledges: () => Pledge[];
 }
@@ -297,34 +304,35 @@ const GivingContext = createContext<GivingContextType | undefined>(undefined);
 
 export const GivingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
-  const { isDemoMode, demoDataset } = useDemo();
+  const { isDemoMode, demoDataset, demoResetKey, markDemoChanged } = useDemo();
   const { addEntry } = useLedger();
   const { enqueueItem } = useSync();
 
-  const [members, setMembers] = useState<Member[]>(SEED_MEMBERS);
-  const [pledges, setPledges] = useState<Pledge[]>(SEED_PLEDGES);
-  const [givingRecords, setGivingRecords] = useState<MemberGivingRecord[]>(SEED_GIVING_RECORDS);
-  const [countingSheets, setCountingSheets] = useState<CountingSheet[]>(SEED_COUNTING_SHEETS);
+  const [members, setMembers] = useState<Member[]>(() =>
+    loadFromStore('members', isDemoMode, isDemoMode ? (demoDataset.members as Member[]) : SEED_MEMBERS)
+  );
+  const [pledges, setPledges] = useState<Pledge[]>(() =>
+    loadFromStore('pledges', isDemoMode, isDemoMode ? (demoDataset.pledges as Pledge[]) : SEED_PLEDGES)
+  );
+  const [givingRecords, setGivingRecords] = useState<MemberGivingRecord[]>(() =>
+    loadFromStore('giving_records', isDemoMode, isDemoMode ? (demoDataset.givingRecords as MemberGivingRecord[]) : SEED_GIVING_RECORDS)
+  );
+  const [countingSheets, setCountingSheets] = useState<CountingSheet[]>(() =>
+    loadFromStore('counting_sheets', isDemoMode, isDemoMode ? (demoDataset.countingSheets as CountingSheet[]) : SEED_COUNTING_SHEETS)
+  );
 
-  const effectiveMembers = useMemo(() => {
-    return isDemoMode ? (demoDataset.members as Member[]) : members;
-  }, [isDemoMode, demoDataset.members, members]);
+  // Reload state from database partition on mode switch or demo reset (Section 5.1)
+  React.useEffect(() => {
+    setMembers(loadFromStore('members', isDemoMode, isDemoMode ? (demoDataset.members as Member[]) : SEED_MEMBERS));
+    setPledges(loadFromStore('pledges', isDemoMode, isDemoMode ? (demoDataset.pledges as Pledge[]) : SEED_PLEDGES));
+    setGivingRecords(loadFromStore('giving_records', isDemoMode, isDemoMode ? (demoDataset.givingRecords as MemberGivingRecord[]) : SEED_GIVING_RECORDS));
+    setCountingSheets(loadFromStore('counting_sheets', isDemoMode, isDemoMode ? (demoDataset.countingSheets as CountingSheet[]) : SEED_COUNTING_SHEETS));
+  }, [isDemoMode, demoResetKey]);
 
-  const effectivePledges = useMemo(() => {
-    return isDemoMode ? (demoDataset.pledges as Pledge[]) : pledges;
-  }, [isDemoMode, demoDataset.pledges, pledges]);
-
-  const effectiveGivingRecords = useMemo(() => {
-    return isDemoMode
-      ? ([...givingRecords, ...demoDataset.givingRecords] as MemberGivingRecord[])
-      : givingRecords;
-  }, [isDemoMode, demoDataset.givingRecords, givingRecords]);
-
-  const effectiveCountingSheets = useMemo(() => {
-    return isDemoMode
-      ? ([...countingSheets, ...demoDataset.countingSheets] as CountingSheet[])
-      : countingSheets;
-  }, [isDemoMode, demoDataset.countingSheets, countingSheets]);
+  const effectiveMembers = members;
+  const effectivePledges = pledges;
+  const effectiveGivingRecords = givingRecords;
+  const effectiveCountingSheets = countingSheets;
 
   const addMember = useCallback(
     (memberData: Omit<Member, 'id' | 'rowVersion'>) => {
@@ -509,28 +517,105 @@ export const GivingProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // 3. Post to local Ledger
       addEntry(entry);
 
-      // 4. Update counting sheet state
-      setCountingSheets((prev) => [{ ...sheet, journalEntryId: entry.id }, ...prev]);
-
-      // 5. Enqueue for offline sync
-      enqueueItem({
-        entityId: sheet.id,
-        entityType: 'COUNTING_SHEET',
-        action: 'SUBMIT_COUNTING_SHEET',
-        payload: {
-          id: sheet.id,
-          sheet_number: sheet.sheetNumber,
-          service_date: sheet.serviceDate,
-          counter_a_id: sheet.firstCounterId,
-          counter_b_id: sheet.secondCounterId,
-          total_ghs: Number(sheet.grandTotalGhsPesewas),
-        },
-        deviceId: currentUser.deviceId,
+      // 4. Update counting sheet state and save
+      setCountingSheets((prev) => {
+        const next = [{ ...sheet, journalEntryId: entry.id }, ...prev];
+        saveToStore('counting_sheets', isDemoMode, next);
+        return next;
       });
+
+      if (isDemoMode) {
+        markDemoChanged();
+      } else {
+        // 5. Enqueue for offline sync
+        enqueueItem({
+          entityId: sheet.id,
+          entityType: 'COUNTING_SHEET',
+          action: 'SUBMIT_COUNTING_SHEET',
+          payload: {
+            id: sheet.id,
+            sheet_number: sheet.sheetNumber,
+            service_date: sheet.serviceDate,
+            counter_a_id: sheet.firstCounterId,
+            counter_b_id: sheet.secondCounterId,
+            total_ghs: Number(sheet.grandTotalGhsPesewas),
+          },
+          deviceId: currentUser.deviceId,
+        });
+      }
 
       return { sheet, journalEntryId: entry.id };
     },
-    [currentUser, addEntry, enqueueItem]
+    [currentUser, addEntry, enqueueItem, isDemoMode, markDemoChanged]
+  );
+
+  const signDraftCountingSheet = useCallback(
+    (params: {
+      sheetId: string;
+      secondCounterId: string;
+      secondCounterName: string;
+      exchangeRateUsd?: string;
+    }) => {
+      const existing = countingSheets.find((s) => s.id === params.sheetId);
+      if (!existing) {
+        throw new Error(`Counting sheet ${params.sheetId} not found`);
+      }
+
+      const validation = validateTwoCounterSignOff(
+        existing.firstCounterId,
+        params.secondCounterId
+      );
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      const updatedSheet: CountingSheet = {
+        ...existing,
+        secondCounterId: params.secondCounterId,
+        secondCounterName: params.secondCounterName,
+        secondSignedAt: new Date().toISOString(),
+        status: 'POSTED',
+      };
+
+      const entry = generateJournalEntryFromCountingSheet({
+        sheet: updatedSheet,
+        branchId: currentUser.branchId,
+        documentNumber: `JE-${updatedSheet.sheetNumber}`,
+        createdBy: currentUser.fullName,
+        deviceId: currentUser.deviceId,
+        exchangeRateUsd: params.exchangeRateUsd,
+      });
+
+      addEntry(entry);
+
+      const nextSheets = countingSheets.map((s) =>
+        s.id === params.sheetId ? { ...updatedSheet, journalEntryId: entry.id } : s
+      );
+      setCountingSheets(nextSheets);
+      saveToStore('counting_sheets', isDemoMode, nextSheets);
+
+      if (isDemoMode) {
+        markDemoChanged();
+      } else {
+        enqueueItem({
+          entityId: updatedSheet.id,
+          entityType: 'COUNTING_SHEET',
+          action: 'SUBMIT_COUNTING_SHEET',
+          payload: {
+            id: updatedSheet.id,
+            sheet_number: updatedSheet.sheetNumber,
+            service_date: updatedSheet.serviceDate,
+            counter_a_id: updatedSheet.firstCounterId,
+            counter_b_id: updatedSheet.secondCounterId,
+            total_ghs: Number(updatedSheet.grandTotalGhsPesewas),
+          },
+          deviceId: currentUser.deviceId,
+        });
+      }
+
+      return { sheet: updatedSheet, journalEntryId: entry.id };
+    },
+    [countingSheets, currentUser, addEntry, isDemoMode, markDemoChanged, enqueueItem]
   );
 
   // Return giving records with donor names masked if current role lacks permission
@@ -555,6 +640,7 @@ export const GivingProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         recordPledge,
         recordGiving,
         submitCountingSheet,
+        signDraftCountingSheet,
         getMaskedGivingRecords,
         getMaskedPledges,
       }}

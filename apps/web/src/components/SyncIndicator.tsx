@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSync } from '../context/SyncContext.js';
+import { useDemo } from '../context/DemoContext.js';
 import { StatusDot } from './ui/StatusDot.js';
 import { Button } from './ui/Button.js';
 import { RefreshCw, X, Laptop, Cloud, CloudOff, AlertTriangle, ShieldAlert } from 'lucide-react';
@@ -22,6 +23,7 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ embedded: _embedde
     toggleOnlineStatus,
     triggerSync,
   } = useSync();
+  const { isDemoMode } = useDemo();
 
   const [isOpen, setIsOpen] = useState(false);
   const [showAttentionModal, setShowAttentionModal] = useState(false);
@@ -35,35 +37,41 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ embedded: _embedde
     return `${minutesAgo} min ago`;
   };
 
-  // Determine indicator text and semantic dot status per Section 4
+  // Determine indicator text and semantic dot status per Section 4 & Section 5.1
   let statusKey: 'synced' | 'waiting' | 'attention' | 'error' = 'synced';
-  const parts: string[] = [];
+  let statusText = '';
 
-  parts.push(isOnline ? 'Online' : 'Offline');
-
-  if (isSyncing) {
-    statusKey = 'waiting';
-    parts.push('Syncing...');
-  } else if (pendingUploadCount > 0) {
-    statusKey = 'waiting';
-    parts.push(`${pendingUploadCount} waiting to sync`);
-  } else {
-    parts.push('All saved and synced');
-  }
-
-  if (needsAttentionCount > 0) {
+  if (isDemoMode) {
     statusKey = 'attention';
-    parts.push(`${needsAttentionCount} Need Attention`);
-  }
+    statusText = 'Demo mode — sync disabled';
+  } else {
+    const parts: string[] = [];
+    parts.push(isOnline ? 'Online' : 'Offline');
 
-  const statusText = parts.join(' • ');
+    if (isSyncing) {
+      statusKey = 'waiting';
+      parts.push('Syncing...');
+    } else if (pendingUploadCount > 0) {
+      statusKey = 'waiting';
+      parts.push(`${pendingUploadCount} waiting to sync`);
+    } else {
+      parts.push('All saved and synced');
+    }
+
+    if (needsAttentionCount > 0) {
+      statusKey = 'attention';
+      parts.push(`${needsAttentionCount} Need Attention`);
+    }
+
+    statusText = parts.join(' • ');
+  }
 
   return (
     <div className={`relative ${className}`}>
       {/* Interactive Single Sync Indicator Trigger */}
       <button
         onClick={() => {
-          if (needsAttentionCount > 0) {
+          if (!isDemoMode && needsAttentionCount > 0) {
             setShowAttentionModal(true);
           } else {
             setIsOpen((prev) => !prev);
@@ -189,16 +197,34 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ embedded: _embedde
               </div>
             )}
 
+            {/* Demo Mode Hard Guard Alert (Section 5.1) */}
+            {isDemoMode && (
+              <div className="p-2.5 rounded bg-[var(--status-amber)]/10 border border-[var(--status-amber)]/30 text-[12.5px] space-y-1">
+                <div className="flex items-center gap-1.5 text-[var(--status-amber)] font-semibold">
+                  <ShieldAlert className="w-4 h-4 shrink-0" />
+                  <span>Demo Mode — Sync Disabled</span>
+                </div>
+                <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
+                  Sandbox database is isolated. Automatic and manual sync to remote servers or devices is blocked to prevent data contamination.
+                </p>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="pt-2 border-t border-[var(--surface-border-subtle)] flex items-center justify-between">
               <span className="text-[12px] text-[var(--text-muted)]">
-                {isOnline ? 'Direct sync connection ready' : 'Reconnect to upload'}
+                {isDemoMode
+                  ? 'Sync blocked in demo mode'
+                  : isOnline
+                  ? 'Direct sync connection ready'
+                  : 'Reconnect to upload'}
               </span>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => triggerSync()}
-                disabled={!isOnline || isSyncing}
+                disabled={isDemoMode || !isOnline || isSyncing}
+                title={isDemoMode ? 'Sync is disabled in Demo Mode' : 'Trigger synchronization'}
                 icon={<RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />}
               >
                 {isSyncing ? 'Syncing...' : 'Sync now'}

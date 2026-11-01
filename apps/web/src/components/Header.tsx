@@ -73,10 +73,16 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Proper Demo Mode Switch (Section 5.1) */}
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-[var(--radius)] bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-xs">
-            <span className="font-medium text-[var(--text-secondary)] hidden sm:inline select-none">
-              Demo mode
+          {/* Proper Demo Mode Switch with amber label (Section 5.3) */}
+          <div
+            className={`flex items-center gap-2 px-2.5 py-1 rounded-[var(--radius)] border text-xs transition select-none ${
+              isDemoMode
+                ? 'bg-[var(--status-amber)]/10 border-[var(--status-amber)]/40 text-[var(--status-amber)] font-bold'
+                : 'bg-[var(--surface-subtle)] border-[var(--surface-border)] text-[var(--text-secondary)] font-medium'
+            }`}
+          >
+            <span className="hidden sm:inline">
+              {isDemoMode ? 'Demo mode: on' : 'Demo mode: off'}
             </span>
             <button
               role="switch"
@@ -86,6 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
                 isDemoMode ? 'bg-[var(--status-amber)]' : 'bg-[var(--surface-border)]'
               }`}
               title="Toggle Demo Mode"
+              aria-label={isDemoMode ? 'Demo mode: on' : 'Demo mode: off'}
             >
               <span
                 className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${

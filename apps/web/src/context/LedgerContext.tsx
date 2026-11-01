@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 import type {
   Account,
   Fund,
@@ -16,6 +16,7 @@ import {
 } from '@church/domain';
 import { useAuth } from './AuthContext.js';
 import { useDemo } from './DemoContext.js';
+import { loadFromStore, saveToStore } from '../utils/database.js';
 
 export const INITIAL_ACCOUNTS: Account[] = [
   { id: 'acct-1010', branchId: '00000000-0000-0000-0000-000000000001', code: '1010', name: 'Cash on Hand (GHS)', type: 'Asset', currency: 'GHS', isBankOrCash: true, isActive: true },
@@ -156,17 +157,24 @@ const LedgerContext = createContext<LedgerContextType | undefined>(undefined);
 
 export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
-  const { isDemoMode, demoDataset } = useDemo();
+  const { isDemoMode, demoDataset, demoResetKey, markDemoChanged } = useDemo();
   const [accounts] = useState<Account[]>(INITIAL_ACCOUNTS);
   const [funds] = useState<Fund[]>(INITIAL_FUNDS);
   const [periods] = useState<AccountingPeriod[]>(INITIAL_PERIODS);
   const [exchangeRates] = useState<ExchangeRate[]>(INITIAL_EXCHANGE_RATES);
 
-  const [entries, setEntries] = useState<JournalEntry[]>(() => createSeedEntries());
+  const [entries, setEntries] = useState<JournalEntry[]>(() =>
+    loadFromStore('entries', isDemoMode, isDemoMode ? (demoDataset.entries as JournalEntry[]) : createSeedEntries())
+  );
 
-  const effectiveEntries = useMemo(() => {
-    return isDemoMode ? [...entries, ...demoDataset.entries] : entries;
-  }, [isDemoMode, entries, demoDataset.entries]);
+  // Reload state from database partition on mode switch or demo reset (Section 5.1)
+  React.useEffect(() => {
+    setEntries(
+      loadFromStore('entries', isDemoMode, isDemoMode ? (demoDataset.entries as JournalEntry[]) : createSeedEntries())
+    );
+  }, [isDemoMode, demoResetKey]);
+
+  const effectiveEntries = entries;
 
   const trialBalance = calculateTrialBalance(effectiveEntries, accounts, funds);
   const doctorReport = diagnoseLedger({
@@ -178,8 +186,15 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   const addEntry = useCallback((entry: JournalEntry) => {
-    setEntries((prev) => [entry, ...prev]);
-  }, []);
+    setEntries((prev) => {
+      const next = [entry, ...prev];
+      saveToStore('entries', isDemoMode, next);
+      return next;
+    });
+    if (isDemoMode) {
+      markDemoChanged();
+    }
+  }, [isDemoMode, markDemoChanged]);
 
   const reverseEntry = useCallback(
     (originalId: string, reason: string) => {
@@ -197,10 +212,17 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         deviceId: currentUser.deviceId,
       });
 
-      setEntries((prev) => [reversal, ...prev]);
+      setEntries((prev) => {
+        const next = [reversal, ...prev];
+        saveToStore('entries', isDemoMode, next);
+        return next;
+      });
+      if (isDemoMode) {
+        markDemoChanged();
+      }
       return reversal;
     },
-    [entries, currentUser]
+    [entries, currentUser, isDemoMode, markDemoChanged]
   );
 
   const runDoctor = useCallback(() => {
@@ -307,8 +329,10 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   );
 
   const resetLedger = useCallback(() => {
-    setEntries(createSeedEntries());
-  }, []);
+    const initial = isDemoMode ? (demoDataset.entries as JournalEntry[]) : createSeedEntries();
+    setEntries(initial);
+    saveToStore('entries', isDemoMode, initial);
+  }, [isDemoMode, demoDataset.entries]);
 
   return (
     <LedgerContext.Provider

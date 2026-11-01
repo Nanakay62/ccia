@@ -12,6 +12,7 @@ import {
 } from '@church/domain';
 import { PowerSyncUploadConnector, type RpcCaller } from '../services/powersync-connector.js';
 import { useAuth } from './AuthContext.js';
+import { useDemo } from './DemoContext.js';
 import { INITIAL_ACCOUNTS, INITIAL_FUNDS, INITIAL_PERIODS, INITIAL_EXCHANGE_RATES } from './LedgerContext.js';
 
 interface SyncContextType extends SyncStatusState {
@@ -36,6 +37,7 @@ const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
+  const { isDemoMode } = useDemo();
   const [isOnline, setIsOnline] = useState<boolean>(() => {
     return typeof navigator !== 'undefined' ? navigator.onLine : true;
   });
@@ -109,6 +111,10 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const enqueueItem = useCallback((item: Omit<SyncQueueItem, 'id' | 'createdAt' | 'attempts' | 'status'>) => {
+    // Hard guard: Never queue demo sandbox entries for remote synchronization (Section 5.1)
+    if (isDemoMode) {
+      return;
+    }
     const newItem: SyncQueueItem = {
       ...item,
       id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -117,7 +123,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       status: 'QUEUED',
     };
     setQueue((prev) => [...prev, newItem]);
-  }, []);
+  }, [isDemoMode]);
 
   const simulateRejection = useCallback((reason: string) => {
     const rej: SyncRejection = {
@@ -215,6 +221,11 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const triggerSync = useCallback(async () => {
+    // Sync hard guard: the demo database must NEVER sync to remote servers or devices (Section 5.1)
+    if (isDemoMode) {
+      console.warn('Sync Hard Guard: Demo Mode is active. Sandbox data is isolated and cannot sync.');
+      return;
+    }
     if (!isOnline) {
       return;
     }
@@ -236,7 +247,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsSyncing(false);
     }
-  }, [isOnline, queue, mockRpcCaller]);
+  }, [isDemoMode, isOnline, queue, mockRpcCaller]);
 
   const dismissRejection = useCallback((id: string, resolutionNote?: string) => {
     setRejections((prev) =>

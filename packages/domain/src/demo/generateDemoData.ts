@@ -10,6 +10,7 @@
 
 import type { Member, Pledge, MemberGivingRecord, CountingSheet, GivingCategory } from '../giving/types.js';
 import type { JournalEntry } from '../ledger/types.js';
+import type { Requisition, PaymentVoucher, Vendor } from '../expenses/types.js';
 import { createJournalEntry } from '../ledger/rules.js';
 
 const GHANA_FIRST_NAMES = [
@@ -42,6 +43,9 @@ export interface DemoDataset {
   readonly givingRecords: readonly MemberGivingRecord[];
   readonly countingSheets: readonly CountingSheet[];
   readonly entries: readonly JournalEntry[];
+  readonly requisitions?: readonly Requisition[];
+  readonly vouchers?: readonly PaymentVoucher[];
+  readonly vendors?: readonly Vendor[];
 }
 
 export function generate300Members(branchId: string): Member[] {
@@ -449,5 +453,247 @@ export function generate6MonthsLedger(branchId: string, members: readonly Member
     givingRecords,
     countingSheets,
     entries,
+  };
+}
+
+/**
+ * Open items waiting for action in Demo Mode (Section 5.4):
+ * - 2 requisitions waiting for approval (REQ-DEMO-001, REQ-DEMO-002)
+ * - 1 counting sheet from last Sunday awaiting second signature (CS-2026-043)
+ * - 1 deliberate diagnostic discrepancy in Trial Balance Doctor (20 pesewas rounding difference in Aug 2026)
+ */
+export function generateDemoOpenItems(branchId: string): {
+  readonly pendingRequisitions: Requisition[];
+  readonly unsignedCountingSheet: CountingSheet;
+  readonly roundingDiscrepancyEntry: JournalEntry;
+} {
+  const pendingRequisitions: Requisition[] = [
+    {
+      id: 'req-demo-001',
+      branchId,
+      reqNumber: 'REQ-DEMO-001',
+      departmentId: 'dept-logistics',
+      departmentName: 'Logistics & Transport',
+      fundId: 'fund-gen',
+      fundName: 'General Fund',
+      purpose: '50 litres diesel for Sunday service standby generator',
+      currency: 'GHS',
+      estimatedAmountPesewas: 85000n, // GHS 850.00
+      submittedById: 'user-demo-boateng',
+      submittedByName: 'Brother Emmanuel Boateng',
+      status: 'PENDING',
+      quotesNotes: 'TotalEnergies service station diesel quotation attached (GHS 17.00/L)',
+      createdAt: '2026-10-27T08:30:00Z',
+    },
+    {
+      id: 'req-demo-002',
+      branchId,
+      reqNumber: 'REQ-DEMO-002',
+      departmentId: 'dept-children',
+      departmentName: 'Children Ministry',
+      fundId: 'fund-gen',
+      fundName: 'General Fund',
+      purpose: 'Sunday School quarter 4 activity workbooks & crayons',
+      currency: 'GHS',
+      estimatedAmountPesewas: 42000n, // GHS 420.00
+      submittedById: 'user-demo-appiah',
+      submittedByName: 'Sister Grace Appiah',
+      status: 'PENDING',
+      quotesNotes: 'Challenge Bookshop Accra proforma invoice',
+      createdAt: '2026-10-27T10:15:00Z',
+    },
+  ];
+
+  const unsignedCountingSheet: CountingSheet = {
+    id: 'cs-demo-043',
+    branchId,
+    sheetNumber: 'CS-2026-043',
+    serviceDate: '2026-10-26',
+    serviceType: 'Sunday 1st Service',
+    cashDenominationsGhs: [
+      { denomination: 200, count: 15 }, // 3,000
+      { denomination: 100, count: 25 }, // 2,500
+      { denomination: 50, count: 30 },  // 1,500
+      { denomination: 20, count: 40 },  // 800
+      { denomination: 10, count: 65 },  // 650
+    ],
+    cashDenominationsUsd: [],
+    cheques: [],
+    momoTransactions: [],
+    fundAllocations: [
+      { fundId: 'fund-gen', fundName: 'General Fund', category: 'Tithe', amountPesewas: 520000n, currency: 'GHS' },
+      { fundId: 'fund-gen', fundName: 'General Fund', category: 'General Offering', amountPesewas: 325000n, currency: 'GHS' },
+    ],
+    firstCounterId: 'user-0003-counter1',
+    firstCounterName: 'Kwame Boateng (Counter A)',
+    firstSignedAt: '2026-10-26T12:45:00Z',
+    secondCounterId: '',
+    secondCounterName: '',
+    secondSignedAt: '',
+    status: 'DRAFT',
+    totalCashGhsPesewas: 845000n,
+    totalCashUsdCents: 0n,
+    totalChequesGhsPesewas: 0n,
+    totalMomoGhsPesewas: 0n,
+    grandTotalGhsPesewas: 845000n,
+    grandTotalUsdCents: 0n,
+  };
+
+  // Entry with deliberate 20-pesewa rounding difference in an older month (Aug 2026)
+  // Debit 1,500.20 GHS vs Credit 1,500.00 GHS
+  const roundingDiscrepancyEntry = createJournalEntry({
+    id: 'demo-je-rounding',
+    branchId,
+    documentNumber: 'JE-2026-ROUNDING',
+    entryDate: '2026-08-15',
+    narration: 'Foreign Missions Currency Exchange (Simulated 20p Rounding Discrepancy)',
+    createdBy: 'user-0001-treasurer',
+    deviceId: 'DEV-TR-01',
+    lines: [
+      {
+        id: 'demo-round-l1',
+        accountId: 'acct-1020', // Cash USD
+        fundId: 'fund-mis',
+        originalCurrency: 'GHS',
+        originalAmount: 150020n, // GHS 1,500.20
+        exchangeRate: '1.0000',
+        isDebit: true,
+        description: 'USD Offering Converted (Simulated 20p Overstatement)',
+      },
+      {
+        id: 'demo-round-l2',
+        accountId: 'acct-4030', // Special Offering
+        fundId: 'fund-mis',
+        originalCurrency: 'GHS',
+        originalAmount: 150000n, // GHS 1,500.00
+        exchangeRate: '1.0000',
+        isDebit: false,
+        description: 'Missions Special Offering Allocation',
+      },
+    ],
+  });
+
+  return {
+    pendingRequisitions,
+    unsignedCountingSheet,
+    roundingDiscrepancyEntry,
+  };
+}
+
+export function generateDemoSandboxData(branchId: string): Required<DemoDataset> {
+  const members = generate300Members(branchId);
+  const baseData = generate6MonthsLedger(branchId, members);
+  const openItems = generateDemoOpenItems(branchId);
+
+  const vendors: Vendor[] = [
+    {
+      id: 'demo-ven-001',
+      branchId,
+      name: 'Electricity Company of Ghana (ECG)',
+      category: 'Utilities',
+      contactPhone: '+233 30 267 6727',
+      tinOrGhanaCard: 'C0001234567',
+      isActive: true,
+      totalPaidGhsPesewas: 240000n,
+      createdAt: '2026-01-10T10:00:00Z',
+    },
+    {
+      id: 'demo-ven-002',
+      branchId,
+      name: 'Akwasi Sound & Acoustic Engineering Ltd',
+      category: 'Audio/Visual & Instruments',
+      contactPhone: '+233 24 456 7890',
+      tinOrGhanaCard: 'P0009876543',
+      momoNumber: '+233 24 456 7890 (MTN)',
+      bankDetails: 'GCB Bank - High Street Branch - Acct: 1011002233445',
+      isActive: true,
+      totalPaidGhsPesewas: 500000n,
+      createdAt: '2026-02-15T11:00:00Z',
+    },
+    {
+      id: 'demo-ven-003',
+      branchId,
+      name: 'Ghana Water Company Limited (GWCL)',
+      category: 'Utilities',
+      contactPhone: '+233 80 040 000',
+      tinOrGhanaCard: 'C0007654321',
+      isActive: true,
+      totalPaidGhsPesewas: 80000n,
+      createdAt: '2026-01-12T09:00:00Z',
+    },
+    {
+      id: 'demo-ven-004',
+      branchId,
+      name: 'TotalEnergies Fuel Service Station',
+      category: 'Fuel & Transport',
+      contactPhone: '+233 20 888 7766',
+      isActive: true,
+      totalPaidGhsPesewas: 60000n,
+      createdAt: '2026-03-01T08:00:00Z',
+    },
+  ];
+
+  const vouchers: PaymentVoucher[] = [
+    {
+      id: 'demo-v-001',
+      branchId,
+      voucherNumber: 'PV-FS-D01-000041',
+      requisitionId: 'req-demo-000',
+      requisitionNumber: 'REQ-D01-000014',
+      vendorId: 'demo-ven-002',
+      payeeName: 'Akwasi Sound & Acoustic Engineering Ltd',
+      fundId: 'fund-gen',
+      fundName: 'General Fund',
+      expenseAccountId: 'acct-5030',
+      expenseAccountName: 'Maintenance & Repairs',
+      purpose: 'Main stage audio mixer servicing (5% WHT applied)',
+      paymentMethod: 'CHEQUE',
+      currency: 'GHS',
+      grossAmountPesewas: 500000n,
+      withholdingTaxRate: 5,
+      withholdingTaxPesewas: 25000n,
+      netPayablePesewas: 475000n,
+      voucherDate: '2026-10-25',
+      chequeNumber: 'CHQ-009941',
+      preparedById: 'user-0002-finsec',
+      preparedByName: 'Sister Naomi Addo',
+      authorizedById: 'user-0001-treasurer',
+      authorizedByName: 'Elder Kofi Asante',
+      createdAt: '2026-10-25T11:00:00Z',
+    },
+  ];
+
+  return {
+    members,
+    pledges: [...baseData.pledges],
+    givingRecords: [...baseData.givingRecords],
+    countingSheets: [openItems.unsignedCountingSheet, ...baseData.countingSheets],
+    entries: [openItems.roundingDiscrepancyEntry, ...baseData.entries],
+    requisitions: [
+      ...openItems.pendingRequisitions,
+      {
+        id: 'req-demo-000',
+        branchId,
+        reqNumber: 'REQ-D01-000014',
+        departmentId: 'dept-choir',
+        departmentName: 'Music & Choir',
+        fundId: 'fund-gen',
+        fundName: 'General Fund',
+        purpose: 'Quarterly acoustic servicing of main stage audio mixers & wireless mics',
+        currency: 'GHS',
+        estimatedAmountPesewas: 500000n,
+        submittedById: 'user-demo-samuel',
+        submittedByName: 'Brother Samuel (Choir Director)',
+        status: 'APPROVED',
+        quotesNotes: 'Quote attached from Akwasi Sound Engineering Ltd',
+        approvedById: 'user-0004-pastor',
+        approvedByName: 'Pastor Kwesi Mensah',
+        approvalComments: 'Approved. Prepare PV with 5% WHT.',
+        approvedAt: '2026-10-24T14:30:00Z',
+        createdAt: '2026-10-24T10:00:00Z',
+      },
+    ],
+    vouchers,
+    vendors,
   };
 }

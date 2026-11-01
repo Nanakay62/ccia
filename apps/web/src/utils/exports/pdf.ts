@@ -4,7 +4,7 @@
  * with Ghanaian church branding, table grids, summary blocks, signature sections, and legal disclosures.
  */
 
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 
 export interface PdfColumnDef {
   header: string;
@@ -24,6 +24,7 @@ export interface PdfExportOptions {
   data: Record<string, string | number>[];
   summaryRows?: { label: string; value: string }[];
   disclosureFootnote?: string;
+  isDemo?: boolean;
 }
 
 export async function exportReportToPdf(options: PdfExportOptions): Promise<void> {
@@ -298,6 +299,26 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
       color: slateText,
     });
   });
+
+  // Apply diagonal DEMO — NOT OFFICIAL watermark across all pages in Demo Mode (Section 5.3)
+  const isDemoActive =
+    options.isDemo ??
+    (typeof window !== 'undefined' && localStorage.getItem('church_demo_mode') === 'true');
+
+  if (isDemoActive) {
+    const pages = pdfDoc.getPages();
+    for (const p of pages) {
+      p.drawText('DEMO — NOT OFFICIAL', {
+        x: 75,
+        y: 260,
+        size: 42,
+        font: fontBold,
+        color: rgb(0.65, 0.65, 0.65),
+        opacity: 0.22,
+        rotate: degrees(45),
+      });
+    }
+  }
 
   // Save and trigger download
   const pdfBytes = await pdfDoc.save();

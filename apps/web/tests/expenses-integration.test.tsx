@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AuthProvider } from '../src/context/AuthContext.js';
+import { DemoProvider } from '../src/context/DemoContext.js';
 import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { GivingProvider } from '../src/context/GivingContext.js';
@@ -10,13 +11,15 @@ import { ExpensesView } from '../src/components/expenses/ExpensesView.js';
 
 const TestAppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <AuthProvider>
-    <SyncProvider>
-      <LedgerProvider>
-        <GivingProvider>
-          <ExpensesProvider>{children}</ExpensesProvider>
-        </GivingProvider>
-      </LedgerProvider>
-    </SyncProvider>
+    <DemoProvider>
+      <SyncProvider>
+        <LedgerProvider>
+          <GivingProvider>
+            <ExpensesProvider>{children}</ExpensesProvider>
+          </GivingProvider>
+        </LedgerProvider>
+      </SyncProvider>
+    </DemoProvider>
   </AuthProvider>
 );
 

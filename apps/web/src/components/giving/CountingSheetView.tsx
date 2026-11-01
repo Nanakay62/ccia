@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../../context/AuthContext.js';
 import { useGiving } from '../../context/GivingContext.js';
 import type {
   ServiceType,
@@ -32,7 +33,8 @@ import {
 } from 'lucide-react';
 
 export const CountingSheetView: React.FC = () => {
-  const { countingSheets, submitCountingSheet } = useGiving();
+  const { currentUser } = useAuth();
+  const { countingSheets, submitCountingSheet, signDraftCountingSheet } = useGiving();
 
   const [activeTab, setActiveTab] = useState<'NEW_SHEET' | 'HISTORY'>('NEW_SHEET');
 
@@ -815,18 +817,48 @@ export const CountingSheetView: React.FC = () => {
                       GHS {(Number(sheet.grandTotalGhsPesewas) / 100).toFixed(2)}
                     </td>
                     <td className="p-2.5 text-center">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-[10px]">
-                        {sheet.status}
+                      <span
+                        className={`px-2 py-0.5 rounded-full font-semibold text-[10px] ${
+                          sheet.status === 'DRAFT'
+                            ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        }`}
+                      >
+                        {sheet.status === 'DRAFT' ? 'AWAITING 2ND SIGNATURE' : sheet.status}
                       </span>
                     </td>
                     <td className="p-2.5 text-center">
-                      <button
-                        onClick={() => setSelectedSheet(sheet)}
-                        className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition"
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => setSelectedSheet(sheet)}
+                          className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {sheet.status === 'DRAFT' && (
+                          <button
+                            onClick={() => {
+                              try {
+                                signDraftCountingSheet({
+                                  sheetId: sheet.id,
+                                  secondCounterId: currentUser.id,
+                                  secondCounterName: currentUser.fullName,
+                                });
+                                setPostSuccess(
+                                  `Counting Sheet ${sheet.sheetNumber} signed off by ${sheet.firstCounterName} and ${currentUser.fullName}. Balanced Journal Entry posted to General Ledger!`
+                                );
+                              } catch (err) {
+                                setErrorMessage(err instanceof Error ? err.message : String(err));
+                              }
+                            }}
+                            className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white transition shadow-sm"
+                            title="Sign as Counter B and post to ledger"
+                          >
+                            Sign
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -882,7 +914,29 @@ export const CountingSheetView: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
+            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
+              {selectedSheet.status === 'DRAFT' && (
+                <button
+                  onClick={() => {
+                    try {
+                      signDraftCountingSheet({
+                        sheetId: selectedSheet.id,
+                        secondCounterId: currentUser.id,
+                        secondCounterName: currentUser.fullName,
+                      });
+                      setSelectedSheet(null);
+                      setPostSuccess(
+                        `Counting Sheet ${selectedSheet.sheetNumber} signed off by ${selectedSheet.firstCounterName} and ${currentUser.fullName}. Balanced Journal Entry posted to General Ledger!`
+                      );
+                    } catch (err) {
+                      setErrorMessage(err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                >
+                  Sign as Counter B ({currentUser.fullName}) &amp; Post to Ledger
+                </button>
+              )}
               <button
                 onClick={() => setSelectedSheet(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold"

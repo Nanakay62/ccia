@@ -19,6 +19,8 @@ import {
 import { useAuth } from './AuthContext.js';
 import { useLedger } from './LedgerContext.js';
 import { useSync } from './SyncContext.js';
+import { useDemo } from './DemoContext.js';
+import { loadFromStore, saveToStore } from '../utils/database.js';
 
 export const SEED_VENDORS: Vendor[] = [
   {
@@ -278,15 +280,36 @@ export const ExpensesProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { currentUser } = useAuth();
   const { addEntry } = useLedger();
   const { enqueueItem } = useSync();
+  const { isDemoMode, demoDataset, demoResetKey, markDemoChanged } = useDemo();
 
-  const [requisitions, setRequisitions] = useState<Requisition[]>(SEED_REQUISITIONS);
-  const [vouchers, setVouchers] = useState<PaymentVoucher[]>(SEED_VOUCHERS);
-  const [vendors, setVendors] = useState<Vendor[]>(SEED_VENDORS);
-  const [pettyCashFloat, setPettyCashFloat] = useState<PettyCashFloat>(SEED_PETTY_CASH_FLOAT);
-  const [pettyCashTransactions, setPettyCashTransactions] = useState<PettyCashTransaction[]>(
-    SEED_PETTY_CASH_TRANSACTIONS
+  const [requisitions, setRequisitions] = useState<Requisition[]>(() =>
+    loadFromStore('requisitions', isDemoMode, isDemoMode ? (demoDataset.requisitions as Requisition[]) : SEED_REQUISITIONS)
   );
-  const [assets, setAssets] = useState<FixedAsset[]>(SEED_ASSETS);
+  const [vouchers, setVouchers] = useState<PaymentVoucher[]>(() =>
+    loadFromStore('vouchers', isDemoMode, isDemoMode ? (demoDataset.vouchers as PaymentVoucher[]) : SEED_VOUCHERS)
+  );
+  const [vendors, setVendors] = useState<Vendor[]>(() =>
+    loadFromStore('vendors', isDemoMode, isDemoMode ? (demoDataset.vendors as Vendor[]) : SEED_VENDORS)
+  );
+  const [pettyCashFloat, setPettyCashFloat] = useState<PettyCashFloat>(() =>
+    loadFromStore('float', isDemoMode, SEED_PETTY_CASH_FLOAT)
+  );
+  const [pettyCashTransactions, setPettyCashTransactions] = useState<PettyCashTransaction[]>(() =>
+    loadFromStore('petty_cash', isDemoMode, SEED_PETTY_CASH_TRANSACTIONS)
+  );
+  const [assets, setAssets] = useState<FixedAsset[]>(() =>
+    loadFromStore('assets', isDemoMode, SEED_ASSETS)
+  );
+
+  // Reload state from database partition on mode switch or demo reset (Section 5.1)
+  React.useEffect(() => {
+    setRequisitions(loadFromStore('requisitions', isDemoMode, isDemoMode ? (demoDataset.requisitions as Requisition[]) : SEED_REQUISITIONS));
+    setVouchers(loadFromStore('vouchers', isDemoMode, isDemoMode ? (demoDataset.vouchers as PaymentVoucher[]) : SEED_VOUCHERS));
+    setVendors(loadFromStore('vendors', isDemoMode, isDemoMode ? (demoDataset.vendors as Vendor[]) : SEED_VENDORS));
+    setPettyCashFloat(loadFromStore('float', isDemoMode, SEED_PETTY_CASH_FLOAT));
+    setPettyCashTransactions(loadFromStore('petty_cash', isDemoMode, SEED_PETTY_CASH_TRANSACTIONS));
+    setAssets(loadFromStore('assets', isDemoMode, SEED_ASSETS));
+  }, [isDemoMode, demoResetKey]);
 
   // Submit Requisition
   const submitRequisition = useCallback(
@@ -307,77 +330,91 @@ export const ExpensesProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         createdAt: new Date().toISOString(),
       };
 
-      setRequisitions((prev) => [newReq, ...prev]);
+      const nextReqs = [newReq, ...requisitions];
+      setRequisitions(nextReqs);
+      saveToStore('requisitions', isDemoMode, nextReqs);
 
-      enqueueItem({
-        entityId: newReq.id,
-        entityType: 'REQUISITION',
-        action: 'POST_JOURNAL_ENTRY',
-        payload: { ...newReq },
-        deviceId: currentUser.deviceId,
-      });
+      if (isDemoMode) {
+        markDemoChanged();
+      } else {
+        enqueueItem({
+          entityId: newReq.id,
+          entityType: 'REQUISITION',
+          action: 'POST_JOURNAL_ENTRY',
+          payload: { ...newReq },
+          deviceId: currentUser.deviceId,
+        });
+      }
 
       return newReq;
     },
-    [currentUser, enqueueItem]
+    [currentUser, requisitions, enqueueItem, isDemoMode, markDemoChanged]
   );
 
   // Approve Requisition (Pastor / Elder or Treasurer)
   const approveRequisition = useCallback(
     (id: string, comments?: string) => {
-      setRequisitions((prev) =>
-        prev.map((r) =>
-          r.id === id
-            ? {
-                ...r,
-                status: 'APPROVED',
-                approvedById: currentUser.id,
-                approvedByName: currentUser.fullName,
-                approvalComments: comments ?? 'Approved as requested',
-                approvedAt: new Date().toISOString(),
-              }
-            : r
-        )
+      const nextReqs = requisitions.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              status: 'APPROVED' as const,
+              approvedById: currentUser.id,
+              approvedByName: currentUser.fullName,
+              approvalComments: comments ?? 'Approved as requested',
+              approvedAt: new Date().toISOString(),
+            }
+          : r
       );
+      setRequisitions(nextReqs);
+      saveToStore('requisitions', isDemoMode, nextReqs);
 
-      enqueueItem({
-        entityId: id,
-        entityType: 'REQUISITION',
-        action: 'APPROVE_REQUISITION',
-        payload: { id, action: 'APPROVED', comments },
-        deviceId: currentUser.deviceId,
-      });
+      if (isDemoMode) {
+        markDemoChanged();
+      } else {
+        enqueueItem({
+          entityId: id,
+          entityType: 'REQUISITION',
+          action: 'APPROVE_REQUISITION',
+          payload: { id, action: 'APPROVED', comments },
+          deviceId: currentUser.deviceId,
+        });
+      }
     },
-    [currentUser, enqueueItem]
+    [currentUser, requisitions, enqueueItem, isDemoMode, markDemoChanged]
   );
 
   // Reject Requisition
   const rejectRequisition = useCallback(
     (id: string, comments: string) => {
-      setRequisitions((prev) =>
-        prev.map((r) =>
-          r.id === id
-            ? {
-                ...r,
-                status: 'REJECTED',
-                approvedById: currentUser.id,
-                approvedByName: currentUser.fullName,
-                approvalComments: comments,
-                approvedAt: new Date().toISOString(),
-              }
-            : r
-        )
+      const nextReqs = requisitions.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              status: 'REJECTED' as const,
+              approvedById: currentUser.id,
+              approvedByName: currentUser.fullName,
+              approvalComments: comments,
+              approvedAt: new Date().toISOString(),
+            }
+          : r
       );
+      setRequisitions(nextReqs);
+      saveToStore('requisitions', isDemoMode, nextReqs);
 
-      enqueueItem({
-        entityId: id,
-        entityType: 'REQUISITION',
-        action: 'APPROVE_REQUISITION',
-        payload: { id, action: 'REJECTED', comments },
-        deviceId: currentUser.deviceId,
-      });
+      if (isDemoMode) {
+        markDemoChanged();
+      } else {
+        enqueueItem({
+          entityId: id,
+          entityType: 'REQUISITION',
+          action: 'APPROVE_REQUISITION',
+          payload: { id, action: 'REJECTED', comments },
+          deviceId: currentUser.deviceId,
+        });
+      }
     },
-    [currentUser, enqueueItem]
+    [currentUser, requisitions, enqueueItem, isDemoMode, markDemoChanged]
   );
 
   // Create Payment Voucher (with WHT calculation and auto-posted balanced double-entry)
@@ -451,38 +488,44 @@ export const ExpensesProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       addEntry(entry);
 
       // 3. Update state
-      setVouchers((prev) => [{ ...voucher, journalEntryId: entry.id }, ...prev]);
+      const nextVouchers = [{ ...voucher, journalEntryId: entry.id }, ...vouchers];
+      setVouchers(nextVouchers);
+      saveToStore('vouchers', isDemoMode, nextVouchers);
 
       // If tied to requisition, mark requisition PAID
       if (params.requisitionId) {
-        setRequisitions((prev) =>
-          prev.map((r) => (r.id === params.requisitionId ? { ...r, status: 'PAID' } : r))
-        );
+        const nextReqs = requisitions.map((r) => (r.id === params.requisitionId ? { ...r, status: 'PAID' as const } : r));
+        setRequisitions(nextReqs);
+        saveToStore('requisitions', isDemoMode, nextReqs);
       }
 
       // If tied to vendor, update total paid
       if (params.vendorId) {
-        setVendors((prev) =>
-          prev.map((v) =>
-            v.id === params.vendorId
-              ? { ...v, totalPaidGhsPesewas: v.totalPaidGhsPesewas + params.grossAmountPesewas }
-              : v
-          )
+        const nextVendors = vendors.map((v) =>
+          v.id === params.vendorId
+            ? { ...v, totalPaidGhsPesewas: v.totalPaidGhsPesewas + params.grossAmountPesewas }
+            : v
         );
+        setVendors(nextVendors);
+        saveToStore('vendors', isDemoMode, nextVendors);
       }
 
-      // 4. Enqueue offline sync
-      enqueueItem({
-        entityId: voucher.id,
-        entityType: 'PAYMENT_VOUCHER',
-        action: 'POST_JOURNAL_ENTRY',
-        payload: { ...voucher, journal_entry_id: entry.id },
-        deviceId: currentUser.deviceId,
-      });
+      if (isDemoMode) {
+        markDemoChanged();
+      } else {
+        // 4. Enqueue offline sync
+        enqueueItem({
+          entityId: voucher.id,
+          entityType: 'PAYMENT_VOUCHER',
+          action: 'POST_JOURNAL_ENTRY',
+          payload: { ...voucher, journal_entry_id: entry.id },
+          deviceId: currentUser.deviceId,
+        });
+      }
 
       return { voucher, journalEntryId: entry.id };
     },
-    [currentUser, requisitions, addEntry, enqueueItem]
+    [currentUser, requisitions, vouchers, vendors, addEntry, enqueueItem, isDemoMode, markDemoChanged]
   );
 
   // Disburse Petty Cash
