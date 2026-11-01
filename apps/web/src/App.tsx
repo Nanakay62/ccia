@@ -6,13 +6,14 @@ import { Navigation, type NavTab } from './components/Navigation.js';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal.js';
 import { LockScreen } from './components/LockScreen.js';
 import { DashboardView } from './components/DashboardView.js';
+import { LedgerView } from './components/ledger/LedgerView.js';
+import { TrialBalanceView } from './components/ledger/TrialBalanceView.js';
+import { DoctorView } from './components/doctor/DoctorView.js';
 import {
-  LedgerView,
   CountingView,
   ExpensesView,
   GivingView,
   ReportsView,
-  DoctorView,
   SettingsView,
 } from './components/SectionViews.js';
 
@@ -54,11 +55,14 @@ export const App: React.FC = () => {
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
           {activeTab === 'dashboard' && <DashboardView onNavigate={setActiveTab} />}
           {activeTab === 'ledger' && <LedgerView />}
+          {activeTab === 'trial-balance' && (
+            <TrialBalanceView onNavigateToDoctor={() => setActiveTab('doctor')} />
+          )}
+          {activeTab === 'doctor' && <DoctorView />}
           {activeTab === 'counting' && <CountingView />}
           {activeTab === 'expenses' && <ExpensesView />}
           {activeTab === 'giving' && <GivingView />}
           {activeTab === 'reports' && <ReportsView />}
-          {activeTab === 'doctor' && <DoctorView />}
           {activeTab === 'settings' && <SettingsView />}
         </main>
       </div>

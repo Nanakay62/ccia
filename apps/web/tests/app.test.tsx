@@ -4,8 +4,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { App } from '../src/App.js';
 import { AuthProvider } from '../src/context/AuthContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
+import { LedgerProvider } from '../src/context/LedgerContext.js';
 
-describe('Web App Shell & Role-Based UI', () => {
+describe('Web App Shell, Core Ledger & TB Doctor', () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -14,7 +15,9 @@ describe('Web App Shell & Role-Based UI', () => {
     render(
       <AuthProvider>
         <SyncProvider>
-          <App />
+          <LedgerProvider>
+            <App />
+          </LedgerProvider>
         </SyncProvider>
       </AuthProvider>
     );
@@ -31,6 +34,38 @@ describe('Web App Shell & Role-Based UI', () => {
     expect(screen.getAllByText(/Online/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/waiting to sync/i)).toBeDefined();
     expect(screen.getByText(/Need Attention/i)).toBeDefined();
+  });
+
+  it('renders trial balance and verifies accounts are in balance', () => {
+    renderApp();
+
+    // Click "Trial Balance" in navigation
+    const tbTab = screen.getAllByText('Trial Balance')[0]!;
+    fireEvent.click(tbTab);
+
+    expect(screen.getByText(/Trial Balance & Fund Position/i)).toBeDefined();
+    expect(screen.getByText(/Books are in Perfect Balance/i)).toBeDefined();
+    expect(screen.getByText('Check & Diagnose')).toBeDefined();
+  });
+
+  it('renders Trial Balance Doctor and detects injected sign inversion error', () => {
+    renderApp();
+
+    // Navigate to TB Doctor tab
+    const doctorTab = screen.getAllByText('TB Doctor')[0]!;
+    fireEvent.click(doctorTab);
+
+    expect(screen.getAllByText(/Trial Balance Doctor/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/10-Check Audit Sequence/i)).toBeDefined();
+    expect(screen.getByText(/No diagnostic defects found/i)).toBeDefined();
+
+    // Inject real-world accounting corruption: Debit/Credit Sign Flip
+    const injectFlipBtn = screen.getByText(/Inject Debit\/Credit Sign Flip/i);
+    fireEvent.click(injectFlipBtn);
+
+    // Doctor should immediately update with warning and Rule 7 detection
+    expect(screen.getByText(/Debit\/Credit Sign Inversion/i)).toBeDefined();
+    expect(screen.getByText(/mistakenly entered as a credit/i)).toBeDefined();
   });
 
   it('allows switching to Counter role and masks individual giving records', () => {
