@@ -5,6 +5,7 @@
  */
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
+import { defaultChurchSettings } from '../../config/churchSettings.js';
 
 export interface PdfColumnDef {
   header: string;
@@ -25,14 +26,15 @@ export interface PdfExportOptions {
   summaryRows?: { label: string; value: string }[];
   disclosureFootnote?: string;
   isDemo?: boolean;
+  isDraft?: boolean;
 }
 
 export async function exportReportToPdf(options: PdfExportOptions): Promise<void> {
   const {
     filename,
     reportTitle,
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = defaultChurchSettings.churchName,
+    branchName = defaultChurchSettings.branchName,
     periodText,
     currency,
     columns,
@@ -300,14 +302,51 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
     });
   });
 
-  // Apply diagonal DEMO — NOT OFFICIAL watermark across all pages in Demo Mode (Section 5.3)
+  // Apply page numbers ("Page X of Y") and optional watermarks across all pages
   const isDemoActive =
     options.isDemo ??
     (typeof window !== 'undefined' && localStorage.getItem('church_demo_mode') === 'true');
 
-  if (isDemoActive) {
-    const pages = pdfDoc.getPages();
-    for (const p of pages) {
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+
+  for (let idx = 0; idx < totalPages; idx++) {
+    const p = pages[idx]!;
+    
+    // Page numbering footer (Section 5: "Page X of Y")
+    const pageText = `Page ${idx + 1} of ${totalPages}`;
+    const pageNumWidth = fontRegular.widthOfTextAtSize(pageText, 8);
+    p.drawText(pageText, {
+      x: pageWidth - margin - pageNumWidth,
+      y: 18,
+      size: 8,
+      font: fontRegular,
+      color: rgb(0.45, 0.5, 0.6),
+    });
+
+    p.drawText(`${defaultChurchSettings.churchName} • ${defaultChurchSettings.taxRegNumber}`, {
+      x: margin,
+      y: 18,
+      size: 7.5,
+      font: fontRegular,
+      color: rgb(0.55, 0.6, 0.68),
+    });
+
+    // DRAFT watermark if document is in draft mode
+    if (options.isDraft) {
+      p.drawText('DRAFT', {
+        x: 160,
+        y: 280,
+        size: 72,
+        font: fontBold,
+        color: rgb(0.75, 0.75, 0.75),
+        opacity: 0.18,
+        rotate: degrees(45),
+      });
+    }
+
+    // DEMO — NOT OFFICIAL watermark across all pages in Demo Mode (Section 5.3)
+    if (isDemoActive) {
       p.drawText('DEMO — NOT OFFICIAL', {
         x: 75,
         y: 260,

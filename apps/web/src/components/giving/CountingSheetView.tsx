@@ -30,13 +30,16 @@ import {
   Smartphone,
   Eye,
   X,
+  Printer,
 } from 'lucide-react';
+import { PrintableCountingSheetModal } from './PrintableCountingSheetModal.js';
 
 export const CountingSheetView: React.FC = () => {
   const { currentUser } = useAuth();
   const { countingSheets, submitCountingSheet, signDraftCountingSheet } = useGiving();
 
   const [activeTab, setActiveTab] = useState<'NEW_SHEET' | 'HISTORY'>('NEW_SHEET');
+  const [printableSheet, setPrintableSheet] = useState<CountingSheet | null>(null);
 
   // New Counting Sheet State
   const [serviceDate, setServiceDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -836,6 +839,13 @@ export const CountingSheetView: React.FC = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+                        <button
+                          onClick={() => setPrintableSheet(sheet)}
+                          className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                          title="Print Official Counting Sheet"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
                         {sheet.status === 'DRAFT' && (
                           <button
                             onClick={() => {
@@ -938,8 +948,20 @@ export const CountingSheetView: React.FC = () => {
                 </button>
               )}
               <button
+                type="button"
+                onClick={() => {
+                  const s = selectedSheet;
+                  setSelectedSheet(null);
+                  setPrintableSheet(s);
+                }}
+                className="px-4 py-2 bg-[var(--accent)] hover:opacity-90 text-white rounded-[var(--radius)] text-xs font-semibold flex items-center gap-1.5 transition"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Official Sheet</span>
+              </button>
+              <button
                 onClick={() => setSelectedSheet(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-[var(--radius)] text-xs font-semibold"
               >
                 Close
               </button>
@@ -947,6 +969,13 @@ export const CountingSheetView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL: PRINTABLE COUNTING SHEET */}
+      <PrintableCountingSheetModal
+        sheet={printableSheet}
+        isOpen={!!printableSheet}
+        onClose={() => setPrintableSheet(null)}
+      />
     </div>
   );
 };

@@ -26,6 +26,35 @@ import {
 import { useReports } from '../../context/ReportsContext.js';
 import type { ReportType } from '../../context/ReportsContext.js';
 import { useLedger } from '../../context/LedgerContext.js';
+import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
+import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
+
+const getReportTitle = (report: ReportType): string => {
+  switch (report) {
+    case 'INCOME_EXPENDITURE':
+      return 'Statement of Income and Expenditure';
+    case 'BALANCE_SHEET':
+      return 'Statement of Financial Position (Balance Sheet)';
+    case 'FUND_BALANCE':
+      return 'Fund Balance Report (Restricted vs. Unrestricted)';
+    case 'BUDGET_VS_ACTUAL':
+      return 'Departmental Budget vs. Actual Expenditure';
+    case 'CASH_FLOW':
+      return 'Statement of Cash Flows (Direct Method)';
+    case 'GIVING_SUMMARY':
+      return 'Giving Summary & Collection Channel Report';
+    case 'PLEDGE_STATUS':
+      return 'Building & Special Pledge Campaign Status';
+    case 'TRIAL_BALANCE':
+      return 'General Ledger Trial Balance';
+    case 'BANK_RECONCILIATION':
+      return 'Bank & Cash Reconciliation Statement';
+    case 'AUDIT_LOG':
+      return 'Append-Only Ledger Audit & Compliance Trail';
+    case 'USD_SUMMARY':
+      return 'Denominational Financial Summary (USD Translation)';
+  }
+};
 
 export const ReportsView: React.FC = () => {
   const {
@@ -55,6 +84,7 @@ export const ReportsView: React.FC = () => {
     denominationUsdSummary,
     exportCurrentPdf,
     exportCurrentExcel,
+    exportCurrentWord,
     exportCurrentCsv,
   } = useReports();
 
@@ -137,27 +167,43 @@ export const ReportsView: React.FC = () => {
             <button
               onClick={handleExportPdf}
               disabled={isExporting}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] hover:opacity-90 text-white rounded-[var(--radius)] text-xs font-semibold shadow-sm transition disabled:opacity-50"
               title="Download official printable PDF statement"
             >
-              <Printer className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5" />
               <span>Export PDF</span>
+            </button>
+            <button
+              onClick={exportCurrentWord}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-[var(--radius)] text-xs font-semibold shadow-sm transition"
+              title="Download Microsoft Word document for church council minutes"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Export Word</span>
             </button>
             <button
               onClick={handleExportExcel}
               disabled={isExporting}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-[var(--radius)] text-xs font-semibold shadow-sm transition disabled:opacity-50"
               title="Download Excel spreadsheet workbook"
             >
-              <Download className="w-4 h-4" />
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Export Excel</span>
             </button>
             <button
               onClick={exportCurrentCsv}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-[var(--text-secondary)] border border-[var(--surface-border)] rounded-[var(--radius)] text-xs font-medium transition"
               title="Download raw data in CSV format"
             >
               <span>CSV</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-[var(--text-primary)] border border-[var(--surface-border)] rounded-[var(--radius)] text-xs font-semibold shadow-sm transition"
+              title="Print preview this report with official church letterhead"
+            >
+              <Printer className="w-3.5 h-3.5 text-[var(--accent)]" />
+              <span>Print</span>
             </button>
           </div>
         </div>
@@ -306,31 +352,15 @@ export const ReportsView: React.FC = () => {
       </div>
 
       {/* Main Report Canvas */}
-      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
-        {/* Report Official Printable Header */}
-        <div className="text-center pb-4 border-b border-slate-100 dark:border-slate-800 space-y-1">
-          <div className="text-xs font-bold tracking-widest text-blue-600 uppercase">
-            Accra Central Grace Chapel
-          </div>
-          <h1 className="text-xl font-black text-slate-900 dark:text-white">
-            {activeReport === 'INCOME_EXPENDITURE' && 'Statement of Income and Expenditure'}
-            {activeReport === 'BALANCE_SHEET' && 'Statement of Financial Position (Balance Sheet)'}
-            {activeReport === 'FUND_BALANCE' && 'Fund Balance Report (Restricted vs. Unrestricted)'}
-            {activeReport === 'BUDGET_VS_ACTUAL' && 'Departmental Budget vs. Actual Expenditure'}
-            {activeReport === 'CASH_FLOW' && 'Statement of Cash Flows (Direct Method)'}
-            {activeReport === 'GIVING_SUMMARY' && 'Giving Summary & Collection Channel Report'}
-            {activeReport === 'PLEDGE_STATUS' && 'Building & Special Pledge Campaign Status'}
-            {activeReport === 'TRIAL_BALANCE' && 'General Ledger Trial Balance'}
-            {activeReport === 'BANK_RECONCILIATION' && 'Bank & Cash Reconciliation Statement'}
-            {activeReport === 'AUDIT_LOG' && 'Append-Only Ledger Audit & Compliance Trail'}
-            {activeReport === 'USD_SUMMARY' && 'Denominational Financial Summary (USD Translation)'}
-          </h1>
-          <p className="text-xs text-slate-500">
-            For the period: <span className="font-semibold text-slate-700 dark:text-slate-300">{periodStart}</span> to{' '}
-            <span className="font-semibold text-slate-700 dark:text-slate-300">{periodEnd}</span> • Reporting Currency:{' '}
-            <span className="font-bold text-blue-600">{currencyMode === 'USD_SUMMARY' ? 'USD ($)' : 'GHS (GH₵)'}</span>
-          </p>
-        </div>
+      <div className="p-6 rounded-[var(--radius)] bg-white dark:bg-slate-900 border border-[var(--surface-border)] shadow-sm space-y-6">
+        {/* Report Official Church Letterhead */}
+        <ChurchLetterhead
+          documentTitle={getReportTitle(activeReport)}
+          documentNumber={`REP-${activeReport.slice(0, 3)}-${periodEnd.replace(/-/g, '')}`}
+          documentDate={new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          periodText={`${periodStart} to ${periodEnd}`}
+          currency={currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS'}
+        />
 
         {/* 1. Income & Expenditure Statement */}
         {activeReport === 'INCOME_EXPENDITURE' && (
@@ -836,30 +866,32 @@ export const ReportsView: React.FC = () => {
           </div>
         )}
 
-        {/* Signatures & Certification Block */}
-        <div className="pt-8 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-6 text-xs text-slate-600 dark:text-slate-400">
-          <div className="space-y-1">
-            <div className="border-b border-slate-300 dark:border-slate-700 pb-8 text-slate-400 italic">
-              Digital Signature
-            </div>
-            <p className="font-bold text-slate-800 dark:text-slate-200">Finance Secretary</p>
-            <p className="text-[10px]">Prepared & verified</p>
-          </div>
-          <div className="space-y-1">
-            <div className="border-b border-slate-300 dark:border-slate-700 pb-8 text-slate-400 italic">
-              Digital Signature
-            </div>
-            <p className="font-bold text-slate-800 dark:text-slate-200">Church Treasurer</p>
-            <p className="text-[10px]">Certified & reconciled</p>
-          </div>
-          <div className="space-y-1">
-            <div className="border-b border-slate-300 dark:border-slate-700 pb-8 text-slate-400 italic">
-              Digital Signature
-            </div>
-            <p className="font-bold text-slate-800 dark:text-slate-200">Senior Pastor / Elder</p>
-            <p className="text-[10px]">Approved for reporting</p>
-          </div>
-        </div>
+        {/* Dual Signatures & Certification Block (Section 1.6 & 5) */}
+        <DualSignatureBlock
+          preparedBy={{
+            label: 'Prepared by',
+            name: 'Ebenezer Mensah',
+            role: 'Finance Secretary',
+            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            signaturePlaceholder: '(Signed Electronically)',
+          }}
+          approvedBy={{
+            label: 'Certified by',
+            name: 'Deaconess Akosua Darko',
+            role: 'Church Treasurer',
+            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            signaturePlaceholder: '(Certified)',
+          }}
+          thirdSigner={{
+            label: 'Approved by',
+            name: 'Rev. Emmanuel Appiah',
+            role: 'Senior Pastor / Minister in Charge',
+            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            signaturePlaceholder: '(Approved)',
+          }}
+          showStampBox={true}
+          notes="All balances extracted directly from CCIA immutably signed double-entry ledger journals."
+        />
       </div>
     </div>
   );

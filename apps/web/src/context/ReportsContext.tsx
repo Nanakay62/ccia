@@ -36,6 +36,7 @@ import { useGiving } from './GivingContext.js';
 import { useAuth } from './AuthContext.js';
 import { exportReportToPdf } from '../utils/exports/pdf.js';
 import { exportReportToExcel } from '../utils/exports/excel.js';
+import { exportReportToWord } from '../utils/exports/word.js';
 import { generateCsv, downloadCsv } from '../utils/exports/csv.js';
 
 export type ReportType =
@@ -83,6 +84,7 @@ export interface ReportsContextValue {
   // Export handlers
   readonly exportCurrentPdf: () => Promise<void>;
   readonly exportCurrentExcel: () => Promise<void>;
+  readonly exportCurrentWord: () => void;
   readonly exportCurrentCsv: () => void;
 }
 
@@ -369,6 +371,32 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
           { label: 'Total Liabilities & Fund Balances:', value: `GHS ${(Number(balanceSheet.totalLiabilitiesAndFundsPesewas) / 100).toFixed(2)}` },
         ],
       });
+    } else if (activeReport === 'TRIAL_BALANCE') {
+      const data = trialBalance.accounts.map((a) => ({
+        code: a.accountCode,
+        name: a.accountName,
+        type: a.accountType,
+        debit: a.debitGhs > 0n ? (Number(a.debitGhs) / 100).toFixed(2) : '-',
+        credit: a.creditGhs > 0n ? (Number(a.creditGhs) / 100).toFixed(2) : '-',
+      }));
+      await exportReportToPdf({
+        filename: `trial-balance-${asOfDate}`,
+        reportTitle: 'Trial Balance of Accounts',
+        periodText: `As of ${asOfDate}`,
+        currency: 'GHS',
+        columns: [
+          { header: 'Code', key: 'code', width: 65 },
+          { header: 'Account Name', key: 'name', width: 225 },
+          { header: 'Type', key: 'type', width: 80 },
+          { header: 'Debit (GHS)', key: 'debit', width: 75, align: 'right' },
+          { header: 'Credit (GHS)', key: 'credit', width: 75, align: 'right' },
+        ],
+        data,
+        summaryRows: [
+          { label: 'Total Debits:', value: `GHS ${(Number(trialBalance.totalDebitsGhs) / 100).toFixed(2)}` },
+          { label: 'Total Credits:', value: `GHS ${(Number(trialBalance.totalCreditsGhs) / 100).toFixed(2)}` },
+        ],
+      });
     } else {
       // Default report export
       const rows = incomeExpenditure.incomes.map((i) => ({
@@ -485,6 +513,32 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
           { label: 'Total Liabilities & Funds:', value: Number(balanceSheet.totalLiabilitiesAndFundsPesewas) / 100 },
         ],
       });
+    } else if (activeReport === 'TRIAL_BALANCE') {
+      const data = trialBalance.accounts.map((a) => ({
+        code: a.accountCode,
+        name: a.accountName,
+        type: a.accountType,
+        debit: Number(a.debitGhs) / 100,
+        credit: Number(a.creditGhs) / 100,
+      }));
+      await exportReportToExcel({
+        filename: `trial-balance-${asOfDate}`,
+        reportTitle: 'Trial Balance of Accounts',
+        periodText: `As of ${asOfDate}`,
+        currency: 'GHS',
+        columns: [
+          { header: 'Code', key: 'code', width: 12 },
+          { header: 'Account Name', key: 'name', width: 35 },
+          { header: 'Type', key: 'type', width: 18 },
+          { header: 'Debit (GHS)', key: 'debit', width: 18, isCurrency: true },
+          { header: 'Credit (GHS)', key: 'credit', width: 18, isCurrency: true },
+        ],
+        data,
+        summaryRows: [
+          { label: 'Total Debits:', value: Number(trialBalance.totalDebitsGhs) / 100 },
+          { label: 'Total Credits:', value: Number(trialBalance.totalCreditsGhs) / 100 },
+        ],
+      });
     } else {
       const data = incomeExpenditure.incomes.map((i) => ({
         code: i.accountCode,
@@ -551,6 +605,24 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...balanceSheet.currentLiabilities.map((l) => ['Liabilities', l.accountCode, l.accountName, (Number(l.amountPesewas) / 100).toFixed(2)]),
         ...balanceSheet.fundBalances.map((f) => [`Fund (${f.fundType})`, f.fundId, f.fundName, (Number(f.balancePesewas) / 100).toFixed(2)]),
       ];
+    } else if (activeReport === 'TRIAL_BALANCE') {
+      headers = ['Code', 'Account Name', 'Type', 'Debit (GHS)', 'Credit (GHS)'];
+      rows = [
+        ...trialBalance.accounts.map((a) => [
+          a.accountCode,
+          a.accountName,
+          a.accountType,
+          (Number(a.debitGhs) / 100).toFixed(2),
+          (Number(a.creditGhs) / 100).toFixed(2),
+        ]),
+        [
+          'TOTAL',
+          'Total Debits & Credits',
+          'Balanced',
+          (Number(trialBalance.totalDebitsGhs) / 100).toFixed(2),
+          (Number(trialBalance.totalCreditsGhs) / 100).toFixed(2),
+        ],
+      ];
     } else {
       headers = ['Code', 'Name', 'Amount'];
       rows = incomeExpenditure.incomes.map((i) => [i.accountCode, i.accountName, (Number(i.amountPesewas) / 100).toFixed(2)]);
@@ -558,7 +630,169 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const csvContent = generateCsv(headers, rows);
     downloadCsv(filename, csvContent);
-  }, [activeReport, currencyMode, periodStart, periodEnd, incomeExpenditure, balanceSheet]);
+  }, [activeReport, currencyMode, periodStart, periodEnd, incomeExpenditure, balanceSheet, trialBalance]);
+
+  const exportCurrentWord = useCallback(() => {
+    const isUsd = currencyMode === 'USD_SUMMARY';
+    const isDemo = typeof window !== 'undefined' && localStorage.getItem('church_demo_mode') === 'true';
+
+    if (activeReport === 'INCOME_EXPENDITURE' || activeReport === 'USD_SUMMARY') {
+      const data = isUsd
+        ? [
+            ...denominationUsdSummary.statementOfActivities.mainIncomeLines.map((l) => ({
+              category: 'Income',
+              name: l.name,
+              amount: Number(l.amountUsdCents) / 100,
+            })),
+            ...denominationUsdSummary.statementOfActivities.mainExpenseLines.map((l) => ({
+              category: 'Expenditure',
+              name: l.name,
+              amount: Number(l.amountUsdCents) / 100,
+            })),
+            {
+              isTotal: true,
+              category: 'TOTAL',
+              name: 'Net Operating Surplus / (Deficit)',
+              amount: Number(denominationUsdSummary.statementOfActivities.netSurplusDeficitUsdCents) / 100,
+            },
+          ]
+        : [
+            ...incomeExpenditure.incomes.map((i) => ({
+              category: 'Income',
+              name: `${i.accountCode} - ${i.accountName}`,
+              amount: Number(i.amountPesewas) / 100,
+            })),
+            ...incomeExpenditure.expenses.map((e) => ({
+              category: 'Expenditure',
+              name: `${e.accountCode} - ${e.accountName}`,
+              amount: Number(e.amountPesewas) / 100,
+            })),
+            {
+              isTotal: true,
+              category: 'TOTAL',
+              name: 'Net Operating Surplus / (Deficit)',
+              amount: Number(incomeExpenditure.netSurplusDeficitPesewas) / 100,
+            },
+          ];
+
+      exportReportToWord({
+        title: isUsd ? 'Statement of Activities (USD Summary Translation)' : 'Statement of Income and Expenditure',
+        periodText: `${periodStart} to ${periodEnd}`,
+        currency: isUsd ? 'USD' : 'GHS',
+        columns: [
+          { header: 'Category', key: 'category' },
+          { header: 'Account / Description', key: 'name' },
+          { header: 'Amount', key: 'amount', isCurrency: true },
+        ],
+        data,
+        isDemo,
+      });
+    } else if (activeReport === 'BALANCE_SHEET') {
+      const data = [
+        ...balanceSheet.currentAssets.map((a) => ({
+          group: 'Current Assets',
+          name: `${a.accountCode} - ${a.accountName}`,
+          amount: Number(a.amountPesewas) / 100,
+        })),
+        ...balanceSheet.currentLiabilities.map((l) => ({
+          group: 'Current Liabilities',
+          name: `${l.accountCode} - ${l.accountName}`,
+          amount: Number(l.amountPesewas) / 100,
+        })),
+        ...balanceSheet.fundBalances.map((f) => ({
+          group: `Fund Balances (${f.fundType})`,
+          name: f.fundName,
+          amount: Number(f.balancePesewas) / 100,
+        })),
+        {
+          isTotal: true,
+          group: 'TOTAL ASSETS',
+          name: 'Total Current Assets',
+          amount: Number(balanceSheet.totalAssetsPesewas) / 100,
+        },
+        {
+          isTotal: true,
+          group: 'TOTAL LIABILITIES & FUNDS',
+          name: 'Total Liabilities & Funds',
+          amount: Number(balanceSheet.totalLiabilitiesAndFundsPesewas) / 100,
+        },
+      ];
+
+      exportReportToWord({
+        title: 'Statement of Financial Position (Balance Sheet)',
+        periodText: `As of ${asOfDate}`,
+        currency: 'GHS',
+        columns: [
+          { header: 'Classification', key: 'group' },
+          { header: 'Account / Fund Name', key: 'name' },
+          { header: 'Amount (GHS)', key: 'amount', isCurrency: true },
+        ],
+        data,
+        isDemo,
+      });
+    } else if (activeReport === 'TRIAL_BALANCE') {
+      const data = [
+        ...trialBalance.accounts.map((a) => ({
+          code: a.accountCode,
+          name: a.accountName,
+          type: a.accountType,
+          debit: Number(a.debitGhs) / 100,
+          credit: Number(a.creditGhs) / 100,
+        })),
+        {
+          isTotal: true,
+          code: 'TOTAL',
+          name: 'Total Debits & Credits',
+          type: 'Balanced',
+          debit: Number(trialBalance.totalDebitsGhs) / 100,
+          credit: Number(trialBalance.totalCreditsGhs) / 100,
+        },
+      ];
+
+      exportReportToWord({
+        title: 'Trial Balance of Accounts',
+        periodText: `As of ${asOfDate}`,
+        currency: 'GHS',
+        columns: [
+          { header: 'Code', key: 'code' },
+          { header: 'Account Name', key: 'name' },
+          { header: 'Type', key: 'type' },
+          { header: 'Debit (GHS)', key: 'debit', isCurrency: true },
+          { header: 'Credit (GHS)', key: 'credit', isCurrency: true },
+        ],
+        data,
+        isDemo,
+      });
+    } else {
+      const data = incomeExpenditure.incomes.map((i) => ({
+        code: i.accountCode,
+        name: i.accountName,
+        amount: Number(i.amountPesewas) / 100,
+      }));
+      exportReportToWord({
+        title: activeReport.replace(/_/g, ' '),
+        periodText: `${periodStart} to ${periodEnd}`,
+        currency: 'GHS',
+        columns: [
+          { header: 'Code', key: 'code' },
+          { header: 'Description', key: 'name' },
+          { header: 'Amount (GHS)', key: 'amount', isCurrency: true },
+        ],
+        data,
+        isDemo,
+      });
+    }
+  }, [
+    activeReport,
+    currencyMode,
+    periodStart,
+    periodEnd,
+    asOfDate,
+    incomeExpenditure,
+    balanceSheet,
+    trialBalance,
+    denominationUsdSummary,
+  ]);
 
   const value = useMemo(
     () => ({
@@ -589,6 +823,7 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
       denominationUsdSummary,
       exportCurrentPdf,
       exportCurrentExcel,
+      exportCurrentWord,
       exportCurrentCsv,
     }),
     [
@@ -614,6 +849,7 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
       denominationUsdSummary,
       exportCurrentPdf,
       exportCurrentExcel,
+      exportCurrentWord,
       exportCurrentCsv,
     ]
   );

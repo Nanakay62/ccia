@@ -8,6 +8,7 @@ import {
   type VoucherPaymentMethod,
   type AssetCategory,
   type Requisition,
+  type PaymentVoucher,
 } from '@church/domain';
 import {
   Receipt,
@@ -20,7 +21,9 @@ import {
   CheckCircle,
   Check,
   X,
+  Printer,
 } from 'lucide-react';
+import { PrintableVoucherModal } from './PrintableVoucherModal.js';
 
 export const ExpensesView: React.FC = () => {
   const { currentUser } = useAuth();
@@ -46,6 +49,9 @@ export const ExpensesView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     'REQUISITIONS' | 'VOUCHERS' | 'PETTY_CASH' | 'VENDORS' | 'ASSETS'
   >('REQUISITIONS');
+
+  // Print Voucher Modal State
+  const [selectedPrintVoucher, setSelectedPrintVoucher] = useState<PaymentVoucher | null>(null);
 
   // Requisitions Form State
   const [isNewReqOpen, setIsNewReqOpen] = useState(false);
@@ -182,6 +188,7 @@ export const ExpensesView: React.FC = () => {
       setVGrossGhs('');
       setVChequeNum('');
       setVMomoRef('');
+      setSelectedPrintVoucher(voucher);
       setSuccessBanner(
         `Payment Voucher ${voucher.voucherNumber} created. Net payable: GHS ${(Number(netPesewas) / 100).toFixed(2)}${whtPesewas > 0n ? ` (WHT GHS ${(Number(whtPesewas) / 100).toFixed(2)} posted to Tax Payable)` : ''}. Journal entry linked!`
       );
@@ -530,6 +537,7 @@ export const ExpensesView: React.FC = () => {
                   <th className="p-2.5 text-right">Gross Amount</th>
                   <th className="p-2.5 text-right">WHT Deducted</th>
                   <th className="p-2.5 text-right">Net Disbursed</th>
+                  <th className="p-2.5 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -563,6 +571,17 @@ export const ExpensesView: React.FC = () => {
                     </td>
                     <td className="p-2.5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
                       GHS {(Number(v.netPayablePesewas) / 100).toFixed(2)}
+                    </td>
+                    <td className="p-2.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPrintVoucher(v)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-xs font-semibold text-[var(--text-primary)] border border-[var(--surface-border)] transition"
+                        title="View and print official payment voucher"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[var(--accent)]" />
+                        <span>Print</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1479,6 +1498,13 @@ export const ExpensesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL: PRINTABLE VOUCHER */}
+      <PrintableVoucherModal
+        voucher={selectedPrintVoucher}
+        isOpen={!!selectedPrintVoucher}
+        onClose={() => setSelectedPrintVoucher(null)}
+      />
     </div>
   );
 };

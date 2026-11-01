@@ -9,6 +9,9 @@ export interface ChurchSettings {
   shortName: string;
   address: string;
   country: string;
+  phone: string;
+  email: string;
+  taxRegNumber: string;
   logoUrl?: string; // Optional custom uploaded logo
   accentColor: string; // e.g. '#1e4620' (deep green) or '#4a1525' (deep burgundy)
   goldColor: string; // e.g. '#996515'
@@ -21,11 +24,14 @@ export interface ChurchSettings {
 }
 
 export const defaultChurchSettings: ChurchSettings = {
-  churchName: 'Accra Central Church',
+  churchName: 'Accra Central Grace Chapel',
   branchName: 'Accra Central Branch',
   shortName: 'CCIA Accra',
   address: 'Ring Road Central, P.O. Box GP 4421, Accra, Ghana',
   country: 'Ghana',
+  phone: '+233 30 222 3344 / +233 24 455 6677',
+  email: 'finance@accrachurch.org',
+  taxRegNumber: 'TIN: C0004928172 • Charity Reg: DSW/7821',
   logoUrl: undefined, // Uses high-fidelity SVG seal if not set
   accentColor: '#1e4620', // Deep ecclesiastical forest green
   goldColor: '#996515', // Refined brass / gold rule mark
