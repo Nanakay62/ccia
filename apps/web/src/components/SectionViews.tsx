@@ -173,14 +173,21 @@ export const DoctorView: React.FC = () => (
   </div>
 );
 
+import { BackupRestoreCard } from './settings/BackupRestoreCard.js';
+
 export const SettingsView: React.FC = () => (
-  <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-    <div className="flex items-center gap-2 text-blue-600 font-bold text-lg">
-      <Settings className="w-6 h-6" />
-      <h2>System Administration & Append-Only Audit Log</h2>
+  <div className="space-y-6">
+    <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+      <div className="flex items-center gap-2 text-blue-600 font-bold text-lg">
+        <Settings className="w-6 h-6" />
+        <h2>System Administration & Append-Only Audit Log</h2>
+      </div>
+      <p className="text-sm text-slate-600 dark:text-slate-400">
+        Manage church users, device prefixes, local encrypted backup exports, and inspect the immutable audit log.
+      </p>
     </div>
-    <p className="text-sm text-slate-600 dark:text-slate-400">
-      Manage church users, device prefixes, local encrypted backup exports, and inspect the immutable audit log.
-    </p>
+
+    {/* Encrypted Backup & Multi-Device Simulation */}
+    <BackupRestoreCard />
   </div>
 );

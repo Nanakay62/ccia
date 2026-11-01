@@ -6,3 +6,6 @@ export * from './encryption/index.js';
 export * from './ledger/types.js';
 export * from './ledger/rules.js';
 export * from './doctor/index.js';
+export * from './sync/types.js';
+export * from './sync/connector.js';
+export * from './sync/backup.js';

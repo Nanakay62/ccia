@@ -1,4 +1,4 @@
-import type { Role } from '@church/domain';
+import type { Role, SyncQueueItem, SyncRejection, ConcurrencyConflict } from '@church/domain';
 
 export interface UserSession {
   readonly id: string;
@@ -17,11 +17,9 @@ export interface SyncStatusState {
   isSyncing: boolean;
   pendingUploadCount: number;
   needsAttentionCount: number;
+  conflictsCount: number;
   lastSyncedAt: Date | null;
-  rejections: Array<{
-    id: string;
-    entityType: string;
-    reason: string;
-    rejectedAt: string;
-  }>;
+  queue: SyncQueueItem[];
+  rejections: SyncRejection[];
+  conflicts: ConcurrencyConflict[];
 }
