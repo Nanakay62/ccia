@@ -8,6 +8,8 @@ import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { GivingProvider } from '../src/context/GivingContext.js';
 import { ExpensesProvider } from '../src/context/ExpensesContext.js';
 import { ReportsProvider } from '../src/context/ReportsContext.js';
+import { BudgetProvider } from '../src/context/BudgetContext.js';
+import { PayrollProvider } from '../src/context/PayrollContext.js';
 
 describe('Web App Shell, Core Ledger & TB Doctor', () => {
   beforeEach(() => {
@@ -22,7 +24,11 @@ describe('Web App Shell, Core Ledger & TB Doctor', () => {
             <GivingProvider>
               <ExpensesProvider>
                 <ReportsProvider>
-                  <App />
+                  <BudgetProvider>
+                    <PayrollProvider>
+                      <App />
+                    </PayrollProvider>
+                  </BudgetProvider>
                 </ReportsProvider>
               </ExpensesProvider>
             </GivingProvider>

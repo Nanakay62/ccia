@@ -7,6 +7,8 @@ import { LedgerProvider } from './context/LedgerContext.js';
 import { GivingProvider } from './context/GivingContext.js';
 import { ExpensesProvider } from './context/ExpensesContext.js';
 import { ReportsProvider } from './context/ReportsContext.js';
+import { BudgetProvider } from './context/BudgetContext.js';
+import { PayrollProvider } from './context/PayrollContext.js';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -17,7 +19,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <GivingProvider>
             <ExpensesProvider>
               <ReportsProvider>
-                <App />
+                <BudgetProvider>
+                  <PayrollProvider>
+                    <App />
+                  </PayrollProvider>
+                </BudgetProvider>
               </ReportsProvider>
             </ExpensesProvider>
           </GivingProvider>

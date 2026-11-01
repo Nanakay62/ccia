@@ -13,6 +13,8 @@ import { CountingSheetView } from './components/giving/CountingSheetView.js';
 import { GivingDirectoryView } from './components/giving/GivingDirectoryView.js';
 import { ExpensesView } from './components/expenses/ExpensesView.js';
 import { ReportsView } from './components/reports/ReportsView.js';
+import { BudgetManagerView } from './components/budgets/BudgetManagerView.js';
+import { PayrollView } from './components/payroll/PayrollView.js';
 import { SettingsView } from './components/SectionViews.js';
 
 export const App: React.FC = () => {
@@ -60,6 +62,8 @@ export const App: React.FC = () => {
           {activeTab === 'counting' && <CountingSheetView />}
           {activeTab === 'expenses' && <ExpensesView />}
           {activeTab === 'giving' && <GivingDirectoryView />}
+          {activeTab === 'budgets' && <BudgetManagerView />}
+          {activeTab === 'payroll' && <PayrollView />}
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'settings' && <SettingsView />}
         </main>

@@ -12,3 +12,5 @@ export * from './sync/backup.js';
 export * from './giving/index.js';
 export * from './expenses/index.js';
 export * from './reports/index.js';
+export * from './budgets/index.js';
+export * from './payroll/index.js';

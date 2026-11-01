@@ -9,6 +9,8 @@ import {
   BarChart3,
   Stethoscope,
   Settings,
+  Briefcase,
+  PieChart,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useLedger } from '../context/LedgerContext.js';
@@ -21,6 +23,8 @@ export type NavTab =
   | 'counting'
   | 'expenses'
   | 'giving'
+  | 'budgets'
+  | 'payroll'
   | 'reports'
   | 'doctor'
   | 'settings';
@@ -85,6 +89,21 @@ export const Navigation: React.FC<Props> = ({ activeTab, onSelectTab }) => {
       label: 'Giving Directory',
       icon: Users,
       visible: true, // Clickable, but content strictly filtered by privacy rule
+    },
+    {
+      id: 'budgets',
+      label: 'Budgets & Targets',
+      icon: PieChart,
+      visible:
+        hasPermission(role, 'budget:view_all') ||
+        hasPermission(role, 'budget:view_own_department') ||
+        hasPermission(role, 'budget:manage'),
+    },
+    {
+      id: 'payroll',
+      label: 'Staff & Payroll',
+      icon: Briefcase,
+      visible: hasPermission(role, 'payroll:view') || hasPermission(role, 'payroll:process'),
     },
     {
       id: 'reports',

@@ -5,12 +5,16 @@ import { useLedger } from '../../context/LedgerContext.js';
 import {
   canViewIndividualGiving,
   generatePrintableReceipt,
+  generateMemberGivingStatement,
   type PrintableReceipt,
+  type MemberGivingStatement,
   type GivingCategory,
   type PaymentMethod,
   type Currency,
+  type Member,
 } from '@church/domain';
 import { PrintableReceiptModal } from './PrintableReceiptModal.js';
+import { MemberStatementModal } from './MemberStatementModal.js';
 import {
   Users,
   Search,
@@ -23,6 +27,7 @@ import {
   X,
   Target,
   Building,
+  FileText,
 } from 'lucide-react';
 
 export const GivingDirectoryView: React.FC = () => {
@@ -30,6 +35,8 @@ export const GivingDirectoryView: React.FC = () => {
   const { funds } = useLedger();
   const {
     members,
+    pledges,
+    givingRecords,
     addMember,
     recordGiving,
     recordPledge,
@@ -45,6 +52,27 @@ export const GivingDirectoryView: React.FC = () => {
 
   // Search filter
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Member Statement Modal State
+  const [selectedStatement, setSelectedStatement] = useState<MemberGivingStatement | null>(null);
+  const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
+
+  const handleOpenMemberStatement = (member: Member) => {
+    const statement = generateMemberGivingStatement({
+      member,
+      records: givingRecords,
+      pledges,
+      periodStart: '2026-01-01',
+      periodEnd: '2026-12-31',
+      requestingRole: currentUser.role,
+      certifyingOfficer: currentUser.fullName,
+      certifyingOfficerRole: currentUser.role,
+      churchName: 'Accra Community Church',
+      branchName: 'Main Sanctuary (Accra)',
+    });
+    setSelectedStatement(statement);
+    setIsStatementModalOpen(true);
+  };
 
   // Add Member Modal State
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
@@ -302,6 +330,7 @@ export const GivingDirectoryView: React.FC = () => {
                   <th className="p-2.5">Department</th>
                   <th className="p-2.5">Phone (Encrypted)</th>
                   <th className="p-2.5 text-center">Status</th>
+                  <th className="p-2.5 text-right">Statement</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -329,6 +358,16 @@ export const GivingDirectoryView: React.FC = () => {
                       <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold">
                         {member.status}
                       </span>
+                    </td>
+                    <td className="p-2.5 text-right">
+                      <button
+                        onClick={() => handleOpenMemberStatement(member)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-[11px] font-semibold border border-blue-200 dark:border-blue-800 transition"
+                        title="Generate Official Member Giving Statement"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Statement</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -588,6 +627,7 @@ export const GivingDirectoryView: React.FC = () => {
                     <th className="p-2.5 text-right">Paid (GHS)</th>
                     <th className="p-2.5 text-right">Outstanding</th>
                     <th className="p-2.5 text-center">Status</th>
+                    <th className="p-2.5 text-right">Statement</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -619,6 +659,21 @@ export const GivingDirectoryView: React.FC = () => {
                           >
                             {pld.status}
                           </span>
+                        </td>
+                        <td className="p-2.5 text-right">
+                          <button
+                            onClick={() => {
+                              const mem = members.find((m) => m.id === pld.memberId);
+                              if (mem) {
+                                handleOpenMemberStatement(mem);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-medium transition"
+                            title="Generate Member Giving Statement"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Statement</span>
+                          </button>
                         </td>
                       </tr>
                     );
@@ -811,6 +866,13 @@ export const GivingDirectoryView: React.FC = () => {
         receipt={activeReceipt}
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
+      />
+
+      {/* MEMBER GIVING STATEMENT MODAL */}
+      <MemberStatementModal
+        statement={selectedStatement}
+        isOpen={isStatementModalOpen}
+        onClose={() => setIsStatementModalOpen(false)}
       />
     </div>
   );

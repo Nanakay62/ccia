@@ -4,6 +4,8 @@ export type SyncActionType =
   | 'APPROVE_REQUISITION'
   | 'UPDATE_MEMBER'
   | 'UPDATE_VENDOR'
+  | 'UPDATE_BUDGET'
+  | 'PROCESS_PAYROLL'
   | 'CLOSE_PERIOD';
 
 export type SyncItemStatus = 'QUEUED' | 'UPLOADING' | 'REJECTED' | 'CONFIRMED';
