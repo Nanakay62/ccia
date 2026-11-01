@@ -21,7 +21,7 @@ export interface ChurchSettings {
 }
 
 export const defaultChurchSettings: ChurchSettings = {
-  churchName: 'Church of Christ International, Accra',
+  churchName: 'Accra Central Church',
   branchName: 'Accra Central Branch',
   shortName: 'CCIA Accra',
   address: 'Ring Road Central, P.O. Box GP 4421, Accra, Ghana',

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   BookOpen,
@@ -12,6 +12,8 @@ import {
   Briefcase,
   PieChart,
   Palette,
+  X,
+  MoreHorizontal,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useLedger } from '../context/LedgerContext.js';
@@ -31,162 +33,330 @@ export type NavTab =
   | 'settings'
   | 'style-guide';
 
-interface Props {
+interface NavigationProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
+  className?: string;
 }
 
-export const Navigation: React.FC<Props> = ({ activeTab, onSelectTab }) => {
+interface NavItemDef {
+  id: NavTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  visible: boolean;
+  badge?: string | null;
+}
+
+interface NavGroupDef {
+  groupName: string;
+  items: NavItemDef[];
+}
+
+export const Navigation: React.FC<NavigationProps> = ({
+  activeTab,
+  onSelectTab,
+  className = '',
+}) => {
   const { currentUser } = useAuth();
   const { trialBalance } = useLedger();
   const role = currentUser.role;
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
-  const navItems: Array<{
-    id: NavTab;
-    label: string;
-    icon: React.ComponentType<{ className?: string }>;
-    visible: boolean;
-    badge?: string | null;
-  }> = [
+  // Grouped Navigation structure per Section 2: Daily, Books, People, Reports, System
+  const navGroups: NavGroupDef[] = [
     {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard,
-      visible: true,
+      groupName: 'Daily',
+      items: [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: LayoutDashboard,
+          visible: true,
+        },
+        {
+          id: 'counting',
+          label: 'Counting Sheets',
+          icon: Calculator,
+          visible: hasPermission(role, 'income:create_counting_sheet') || hasPermission(role, 'income:enter_giving'),
+        },
+        {
+          id: 'expenses',
+          label: 'Expenses & Vouchers',
+          icon: Receipt,
+          visible:
+            hasPermission(role, 'expenses:submit_requisition') ||
+            hasPermission(role, 'expenses:approve_requisition') ||
+            hasPermission(role, 'expenses:prepare_voucher'),
+        },
+      ],
     },
     {
-      id: 'ledger',
-      label: 'Journal & Ledger',
-      icon: BookOpen,
-      visible: hasPermission(role, 'ledger:post_entry') || hasPermission(role, 'reports:view_financial'),
+      groupName: 'Books',
+      items: [
+        {
+          id: 'ledger',
+          label: 'Journal & Ledger',
+          icon: BookOpen,
+          visible: hasPermission(role, 'ledger:post_entry') || hasPermission(role, 'reports:view_financial'),
+        },
+        {
+          id: 'trial-balance',
+          label: 'Trial Balance',
+          icon: Scale,
+          visible: hasPermission(role, 'reports:view_financial'),
+          badge: !trialBalance.isBalanced ? 'DIFF' : null,
+        },
+        {
+          id: 'doctor',
+          label: 'TB Doctor',
+          icon: Stethoscope,
+          visible: hasPermission(role, 'ledger:run_trial_balance_doctor'),
+          badge: !trialBalance.isBalanced ? 'ALERT' : null,
+        },
+        {
+          id: 'budgets',
+          label: 'Budgets & Targets',
+          icon: PieChart,
+          visible:
+            hasPermission(role, 'budget:view_all') ||
+            hasPermission(role, 'budget:view_own_department') ||
+            hasPermission(role, 'budget:manage'),
+        },
+      ],
     },
     {
-      id: 'trial-balance',
-      label: 'Trial Balance',
-      icon: Scale,
-      visible: hasPermission(role, 'reports:view_financial'),
-      badge: !trialBalance.isBalanced ? 'DIFF' : null,
+      groupName: 'People',
+      items: [
+        {
+          id: 'giving',
+          label: 'Giving Directory',
+          icon: Users,
+          visible: true,
+        },
+        {
+          id: 'payroll',
+          label: 'Staff & Payroll',
+          icon: Briefcase,
+          visible: hasPermission(role, 'payroll:view') || hasPermission(role, 'payroll:process'),
+        },
+      ],
     },
     {
-      id: 'doctor',
-      label: 'TB Doctor',
-      icon: Stethoscope,
-      visible: hasPermission(role, 'ledger:run_trial_balance_doctor'),
-      badge: !trialBalance.isBalanced ? 'ALERT' : null,
+      groupName: 'Reports',
+      items: [
+        {
+          id: 'reports',
+          label: 'Reports & Statements',
+          icon: BarChart3,
+          visible: hasPermission(role, 'reports:view_financial') || role === 'Department Head',
+        },
+      ],
     },
     {
-      id: 'counting',
-      label: 'Counting Sheets',
-      icon: Calculator,
-      visible: hasPermission(role, 'income:create_counting_sheet') || hasPermission(role, 'income:enter_giving'),
-    },
-    {
-      id: 'expenses',
-      label: 'Expenses & Vouchers',
-      icon: Receipt,
-      visible: hasPermission(role, 'expenses:submit_requisition') || hasPermission(role, 'expenses:approve_requisition') || hasPermission(role, 'expenses:prepare_voucher'),
-    },
-    {
-      id: 'giving',
-      label: 'Giving Directory',
-      icon: Users,
-      visible: true, // Clickable, but content strictly filtered by privacy rule
-    },
-    {
-      id: 'budgets',
-      label: 'Budgets & Targets',
-      icon: PieChart,
-      visible:
-        hasPermission(role, 'budget:view_all') ||
-        hasPermission(role, 'budget:view_own_department') ||
-        hasPermission(role, 'budget:manage'),
-    },
-    {
-      id: 'payroll',
-      label: 'Staff & Payroll',
-      icon: Briefcase,
-      visible: hasPermission(role, 'payroll:view') || hasPermission(role, 'payroll:process'),
-    },
-    {
-      id: 'reports',
-      label: 'Reports & Statements',
-      icon: BarChart3,
-      visible: hasPermission(role, 'reports:view_financial') || role === 'Department Head',
-    },
-    {
-      id: 'settings',
-      label: 'System & Audit',
-      icon: Settings,
-      visible: hasPermission(role, 'admin:manage_users') || hasPermission(role, 'audit:view_log'),
-    },
-    {
-      id: 'style-guide',
-      label: 'Style Guide',
-      icon: Palette,
-      visible: true,
+      groupName: 'System',
+      items: [
+        {
+          id: 'settings',
+          label: 'Settings & Audit',
+          icon: Settings,
+          visible: hasPermission(role, 'admin:manage_users') || hasPermission(role, 'audit:view_log'),
+        },
+        {
+          id: 'style-guide',
+          label: 'Style Guide',
+          icon: Palette,
+          visible: true,
+        },
+      ],
     },
   ];
 
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-r border-slate-200 dark:border-slate-800 p-4 shrink-0 transition-colors">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 px-3">
-          Accounting Navigation
-        </div>
-        <nav className="space-y-1">
-          {navItems.filter((i) => i.visible).map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
+      {/* =========================================================================
+          Desktop & Laptop Sidebar: 248px flush to screen edge (Section 2)
+         ========================================================================= */}
+      <aside
+        className={`hidden md:flex flex-col w-[248px] shrink-0 border-r border-[var(--surface-border)] bg-[var(--surface-panel)] py-4 px-2 select-none ${className}`}
+        aria-label="Accounting Navigation Sidebar"
+      >
+        <div className="flex-1 space-y-4 overflow-y-auto">
+          {navGroups.map((group) => {
+            const visibleItems = group.items.filter((i) => i.visible);
+            if (visibleItems.length === 0) return null;
+
             return (
-              <button
-                key={item.id}
-                onClick={() => onSelectTab(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-                  isActive
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 font-semibold'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-white' : 'text-slate-400 dark:text-slate-500'}`} />
-                  <span className="truncate">{item.label}</span>
+              <div key={group.groupName} className="space-y-1">
+                {/* Small Group Label */}
+                <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider px-3 py-1">
+                  {group.groupName}
                 </div>
-                {item.badge && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500 text-white animate-pulse shadow-sm shadow-rose-500/50">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
+
+                {/* Nav Items */}
+                <div className="space-y-0.5">
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => onSelectTab(item.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-[var(--radius)] text-[14px] transition text-left ${
+                          isActive
+                            ? 'bg-[var(--accent-subtle)] text-[var(--accent)] font-semibold border-l-2 border-[var(--accent)]'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] font-normal'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon
+                            className={`w-4 h-4 shrink-0 ${
+                              isActive ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'
+                            }`}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+
+                        {item.badge && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-[var(--status-red-bg)] text-[var(--status-red)] border border-[var(--status-red)]">
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
-        </nav>
+        </div>
+
+        {/* Footer info block */}
+        <div className="pt-3 border-t border-[var(--surface-border-subtle)] px-3 text-[11px] text-[var(--text-muted)]">
+          <div>Accra Main Branch</div>
+          <div>Offline Ledger v1.0</div>
+        </div>
       </aside>
 
-      {/* Mobile Bottom Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex justify-around items-center px-1 py-1.5 shadow-lg">
-        {navItems.filter((i) => i.visible).slice(0, 5).map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSelectTab(item.id)}
-              className={`flex flex-col items-center justify-center p-2 rounded-xl text-[10px] font-medium min-w-[58px] transition-all relative ${
-                isActive
-                  ? 'text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/30'
-                  : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              <Icon className={`w-5 h-5 mb-0.5 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
-              <span>{item.label}</span>
-              {item.badge && (
-                <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-              )}
-            </button>
-          );
-        })}
+      {/* =========================================================================
+          Mobile Bottom Navigation Bar (< 768px): 5 primary tabs + drawer (Section 2)
+         ========================================================================= */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[var(--surface-panel)] border-t border-[var(--surface-border)] flex items-center justify-around px-1 py-1 shadow-lg select-none"
+        aria-label="Mobile Navigation"
+      >
+        {/* 1. Dashboard */}
+        <button
+          onClick={() => onSelectTab('dashboard')}
+          className={`flex flex-col items-center justify-center p-1.5 min-w-[56px] min-h-[44px] text-[11px] rounded transition ${
+            activeTab === 'dashboard'
+              ? 'text-[var(--accent)] font-semibold'
+              : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <LayoutDashboard className="w-5 h-5 mb-0.5" />
+          <span>Home</span>
+        </button>
+
+        {/* 2. Counting */}
+        <button
+          onClick={() => onSelectTab('counting')}
+          className={`flex flex-col items-center justify-center p-1.5 min-w-[56px] min-h-[44px] text-[11px] rounded transition ${
+            activeTab === 'counting'
+              ? 'text-[var(--accent)] font-semibold'
+              : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <Calculator className="w-5 h-5 mb-0.5" />
+          <span>Giving</span>
+        </button>
+
+        {/* 3. Expenses */}
+        <button
+          onClick={() => onSelectTab('expenses')}
+          className={`flex flex-col items-center justify-center p-1.5 min-w-[56px] min-h-[44px] text-[11px] rounded transition ${
+            activeTab === 'expenses'
+              ? 'text-[var(--accent)] font-semibold'
+              : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <Receipt className="w-5 h-5 mb-0.5" />
+          <span>Expenses</span>
+        </button>
+
+        {/* 4. Reports */}
+        <button
+          onClick={() => onSelectTab('reports')}
+          className={`flex flex-col items-center justify-center p-1.5 min-w-[56px] min-h-[44px] text-[11px] rounded transition ${
+            activeTab === 'reports'
+              ? 'text-[var(--accent)] font-semibold'
+              : 'text-[var(--text-secondary)]'
+          }`}
+        >
+          <BarChart3 className="w-5 h-5 mb-0.5" />
+          <span>Reports</span>
+        </button>
+
+        {/* 5. More Drawer Trigger */}
+        <button
+          onClick={() => setIsMobileDrawerOpen(true)}
+          className="flex flex-col items-center justify-center p-1.5 min-w-[56px] min-h-[44px] text-[11px] text-[var(--text-secondary)] rounded transition"
+        >
+          <MoreHorizontal className="w-5 h-5 mb-0.5" />
+          <span>More</span>
+        </button>
       </nav>
+
+      {/* Mobile "More" Drawer */}
+      {isMobileDrawerOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-xs"
+            onClick={() => setIsMobileDrawerOpen(false)}
+          />
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[var(--surface-panel)] border-t border-[var(--surface-border)] rounded-t-[var(--radius)] p-5 max-h-[80vh] overflow-y-auto space-y-4 animate-slideUp">
+            <div className="flex items-center justify-between pb-2 border-b border-[var(--surface-border)]">
+              <span className="font-serif text-[17px] font-semibold text-[var(--text-primary)]">
+                More Navigation
+              </span>
+              <button
+                onClick={() => setIsMobileDrawerOpen(false)}
+                className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] min-h-[44px] min-w-[44px] flex items-center justify-center"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[14px]">
+              {navGroups
+                .flatMap((g) => g.items)
+                .filter((item) => item.visible)
+                .map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onSelectTab(item.id);
+                        setIsMobileDrawerOpen(false);
+                      }}
+                      className={`flex items-center gap-2 p-3 rounded-[var(--radius)] text-left min-h-[44px] transition ${
+                        isActive
+                          ? 'bg-[var(--accent-subtle)] text-[var(--accent)] font-semibold'
+                          : 'bg-[var(--surface-subtle)] text-[var(--text-primary)] hover:bg-[var(--surface-border-subtle)]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 };
