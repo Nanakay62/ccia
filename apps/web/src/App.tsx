@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from './context/AuthContext.js';
 import { useDemo } from './context/DemoContext.js';
 import { Header } from './components/Header.js';
-import { SyncIndicator } from './components/SyncIndicator.js';
 import { Navigation, type NavTab } from './components/Navigation.js';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal.js';
 import { LockScreen } from './components/LockScreen.js';
@@ -44,7 +43,6 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-      <SyncIndicator />
       <Header
         onOpenRoleSwitcher={() => setIsRoleModalOpen(true)}
         isDark={isDark}

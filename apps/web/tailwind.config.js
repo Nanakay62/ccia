@@ -4,6 +4,31 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: [
+          'Roboto',
+          'Segoe UI Variable',
+          'Segoe UI',
+          'Aptos',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          '"Roboto Mono"',
+          '"Cascadia Code"',
+          'Consolas',
+          'ui-monospace',
+          'monospace',
+        ],
+        numeric: [
+          '"Roboto Mono"',
+          '"Cascadia Code"',
+          'Consolas',
+          'monospace',
+        ],
+      },
       colors: {
         brand: {
           50: '#eff6ff',

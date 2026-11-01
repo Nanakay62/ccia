@@ -6,10 +6,25 @@
   body {
     -webkit-tap-highlight-color: transparent;
     user-select: none;
+    font-family: 'Roboto', 'Segoe UI Variable', 'Segoe UI', 'Aptos', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   }
   input, textarea, select {
     user-select: text;
   }
+}
+
+/* Financial numeric formatting utilities */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-feature-settings: "tnum" 1;
+  font-feature-settings: "tnum" 1;
+}
+
+.font-numeric {
+  font-family: 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-feature-settings: "tnum" 1;
+  font-feature-settings: "tnum" 1;
 }
 
 /* Print stylesheets for vouchers and reports */
