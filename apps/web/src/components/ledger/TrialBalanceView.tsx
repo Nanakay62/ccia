@@ -10,6 +10,7 @@ import {
   DollarSign,
   X,
 } from 'lucide-react';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface Props {
   onNavigateToDoctor: () => void;
@@ -20,6 +21,8 @@ export const TrialBalanceView: React.FC<Props> = ({ onNavigateToDoctor }) => {
 
   const [showRevalModal, setShowRevalModal] = useState(false);
   const [closingRate, setClosingRate] = useState('16.0000');
+
+  useModalEscape(showRevalModal, () => setShowRevalModal(false));
 
   const revalResult = calculateRevaluation({
     entries,

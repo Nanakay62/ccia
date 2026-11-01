@@ -14,6 +14,7 @@ import {
   Edit,
 } from 'lucide-react';
 import { useBudget } from '../../context/BudgetContext.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 export const BudgetManagerView: React.FC = () => {
   const { activeBudget, applyRevision, getUtilization } = useBudget();
@@ -24,6 +25,8 @@ export const BudgetManagerView: React.FC = () => {
   const [newAmountGhs, setNewAmountGhs] = useState('');
   const [revisionReason, setRevisionReason] = useState('');
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+
+  useModalEscape(isRevisionOpen, () => setIsRevisionOpen(false));
 
   if (!activeBudget) {
     return <div className="p-6 text-center text-slate-400">No active church budget found.</div>;

@@ -12,6 +12,8 @@ import {
   ArrowRightLeft,
   X,
 } from 'lucide-react';
+import { useModalEscape } from '../../utils/useModalEscape.js';
+import { EmptyState } from '../ui/EmptyState.js';
 
 export const LedgerView: React.FC = () => {
   const { accounts, funds, entries, addEntry, reverseEntry } = useLedger();
@@ -60,6 +62,8 @@ export const LedgerView: React.FC = () => {
   // Reversal Modal State
   const [reversalTargetId, setReversalTargetId] = useState<string | null>(null);
   const [reversalReason, setReversalReason] = useState('');
+
+  useModalEscape(Boolean(reversalTargetId), () => setReversalTargetId(null));
 
   // Calculate live line totals
   let computedDebitPesewas = 0n;
@@ -500,71 +504,79 @@ export const LedgerView: React.FC = () => {
           <span className="text-xs text-slate-500">Strictly Append-Only</span>
         </div>
 
-        <div className="divide-y divide-slate-200 dark:divide-slate-800">
-          {entries.map((entry) => (
-            <div key={entry.id} className="py-4 space-y-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-sm text-blue-600 dark:text-blue-400">
-                    {entry.documentNumber}
-                  </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {entry.entryDate}
-                  </span>
-                  {entry.isReversal && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">
-                      REVERSAL
+        {entries.length === 0 ? (
+          <EmptyState
+            message="No journal entries posted to the general ledger yet."
+            actionLabel="New Journal Entry"
+            onAction={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          />
+        ) : (
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
+            {entries.map((entry) => (
+              <div key={entry.id} className="py-4 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-sm text-blue-600 dark:text-blue-400">
+                      {entry.documentNumber}
                     </span>
-                  )}
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                    {entry.entryType}
-                  </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      {entry.entryDate}
+                    </span>
+                    {entry.isReversal && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-purple-100 dark:purple-950 text-purple-800 dark:text-purple-300">
+                        REVERSAL
+                      </span>
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                      {entry.entryType}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white">
+                      {formatMoney(money(entry.totalDebitGhs, 'GHS'))}
+                    </span>
+
+                    {!entry.isReversal && (
+                      <button
+                        onClick={() => setReversalTargetId(entry.id)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs transition"
+                        title="Post a linked reversal entry"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-purple-500" />
+                        <span>Reverse</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-mono font-semibold text-slate-900 dark:text-white">
-                    {formatMoney(money(entry.totalDebitGhs, 'GHS'))}
-                  </span>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  {entry.narration}
+                </p>
 
-                  {!entry.isReversal && (
-                    <button
-                      onClick={() => setReversalTargetId(entry.id)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs transition"
-                      title="Post a linked reversal entry"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-purple-500" />
-                      <span>Reverse</span>
-                    </button>
-                  )}
+                {/* Sub-lines */}
+                <div className="pl-3 border-l-2 border-slate-200 dark:border-slate-800 space-y-1 pt-1 text-[11px] text-slate-500">
+                  {entry.lines.map((l) => {
+                    const acct = accounts.find((a) => a.id === l.accountId);
+                    const f = funds.find((x) => x.id === l.fundId);
+                    return (
+                      <div key={l.id} className="flex justify-between items-center">
+                        <span>
+                          {acct?.code} {acct?.name} ({f?.code}) {l.description ? `— ${l.description}` : ''}
+                        </span>
+                        <span className="font-mono">
+                          {l.debitAmountGhs > 0n
+                            ? `Dr ${formatMoney(money(l.debitAmountGhs, 'GHS'))}`
+                            : `Cr ${formatMoney(money(l.creditAmountGhs, 'GHS'))}`}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                {entry.narration}
-              </p>
-
-              {/* Sub-lines */}
-              <div className="pl-3 border-l-2 border-slate-200 dark:border-slate-800 space-y-1 pt-1 text-[11px] text-slate-500">
-                {entry.lines.map((l) => {
-                  const acct = accounts.find((a) => a.id === l.accountId);
-                  const f = funds.find((x) => x.id === l.fundId);
-                  return (
-                    <div key={l.id} className="flex justify-between items-center">
-                      <span>
-                        {acct?.code} {acct?.name} ({f?.code}) {l.description ? `— ${l.description}` : ''}
-                      </span>
-                      <span className="font-mono">
-                        {l.debitAmountGhs > 0n
-                          ? `Dr ${formatMoney(money(l.debitAmountGhs, 'GHS'))}`
-                          : `Cr ${formatMoney(money(l.creditAmountGhs, 'GHS'))}`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Linked Reversal Confirmation Modal */}

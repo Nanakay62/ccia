@@ -24,6 +24,8 @@ import {
   Printer,
 } from 'lucide-react';
 import { PrintableVoucherModal } from './PrintableVoucherModal.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
+import { EmptyState } from '../ui/EmptyState.js';
 
 export const ExpensesView: React.FC = () => {
   const { currentUser } = useAuth();
@@ -110,6 +112,13 @@ export const ExpensesView: React.FC = () => {
 
   // Asset register summary
   const assetSummary = getAssetSummary();
+
+  // Escape key handlers for all modal dialogs (Phase 6 Accessibility)
+  useModalEscape(isNewReqOpen, () => setIsNewReqOpen(false));
+  useModalEscape(isNewVoucherOpen, () => setIsNewVoucherOpen(false));
+  useModalEscape(isDisburseOpen, () => setIsDisburseOpen(false));
+  useModalEscape(isAddVendorOpen, () => setIsAddVendorOpen(false));
+  useModalEscape(isAddAssetOpen, () => setIsAddAssetOpen(false));
 
   // Helper: Open Voucher modal prepopulated from Requisition
   const handlePrepareVoucherFromReq = (req: Requisition) => {
@@ -417,91 +426,99 @@ export const ExpensesView: React.FC = () => {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                <tr>
-                  <th className="p-2.5">Req No.</th>
-                  <th className="p-2.5">Department</th>
-                  <th className="p-2.5">Purpose</th>
-                  <th className="p-2.5">Fund</th>
-                  <th className="p-2.5 text-right">Est. Amount</th>
-                  <th className="p-2.5 text-center">Status</th>
-                  <th className="p-2.5 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {requisitions.map((req) => (
-                  <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                      {req.reqNumber}
-                    </td>
-                    <td className="p-2.5 font-medium text-slate-800 dark:text-slate-200">
-                      {req.departmentName}
-                    </td>
-                    <td className="p-2.5 text-slate-600 dark:text-slate-300 max-w-xs truncate">
-                      {req.purpose}
-                      {req.quotesNotes && (
-                        <div className="text-[10px] text-slate-400 italic">{req.quotesNotes}</div>
-                      )}
-                    </td>
-                    <td className="p-2.5 text-slate-500">{req.fundName}</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                      GHS {(Number(req.estimatedAmountPesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="p-2.5 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          req.status === 'APPROVED'
-                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                            : req.status === 'PENDING'
-                            ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 animate-pulse'
-                            : req.status === 'PAID'
-                            ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
-                            : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
-                        }`}
-                      >
-                        {req.status}
-                      </span>
-                    </td>
-                    <td className="p-2.5 text-center">
-                      {req.status === 'PENDING' && isPastorOrTreasurer && (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => approveRequisition(req.id)}
-                            className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
-                            title="Approve Requisition"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => rejectRequisition(req.id, 'Budget ceiling reached')}
-                            className="p-1 rounded bg-rose-600 hover:bg-rose-500 text-white"
-                            title="Reject Requisition"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {req.status === 'APPROVED' && (
-                        <button
-                          onClick={() => handlePrepareVoucherFromReq(req)}
-                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[11px] font-semibold"
-                        >
-                          Issue Voucher
-                        </button>
-                      )}
-
-                      {req.status === 'PAID' && (
-                        <span className="text-[11px] text-slate-400 font-mono">Voucher Issued</span>
-                      )}
-                    </td>
+          {requisitions.length === 0 ? (
+            <EmptyState
+              message="No expenditure requisitions submitted yet."
+              actionLabel="Submit Requisition"
+              onAction={() => setIsNewReqOpen(true)}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  <tr>
+                    <th className="p-2.5">Req No.</th>
+                    <th className="p-2.5">Department</th>
+                    <th className="p-2.5">Purpose</th>
+                    <th className="p-2.5">Fund</th>
+                    <th className="p-2.5 text-right">Est. Amount</th>
+                    <th className="p-2.5 text-center">Status</th>
+                    <th className="p-2.5 text-center">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {requisitions.map((req) => (
+                    <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                        {req.reqNumber}
+                      </td>
+                      <td className="p-2.5 font-medium text-slate-800 dark:text-slate-200">
+                        {req.departmentName}
+                      </td>
+                      <td className="p-2.5 text-slate-600 dark:text-slate-300 max-w-xs truncate">
+                        {req.purpose}
+                        {req.quotesNotes && (
+                          <div className="text-[10px] text-slate-400 italic">{req.quotesNotes}</div>
+                        )}
+                      </td>
+                      <td className="p-2.5 text-slate-500">{req.fundName}</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        GHS {(Number(req.estimatedAmountPesewas) / 100).toFixed(2)}
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            req.status === 'APPROVED'
+                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                              : req.status === 'PENDING'
+                              ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 animate-pulse'
+                              : req.status === 'PAID'
+                              ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
+                              : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                          }`}
+                        >
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-center">
+                        {req.status === 'PENDING' && isPastorOrTreasurer && (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => approveRequisition(req.id)}
+                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+                              title="Approve Requisition"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => rejectRequisition(req.id, 'Budget ceiling reached')}
+                              className="p-1 rounded bg-rose-600 hover:bg-rose-500 text-white"
+                              title="Reject Requisition"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {req.status === 'APPROVED' && (
+                          <button
+                            onClick={() => handlePrepareVoucherFromReq(req)}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[11px] font-semibold"
+                          >
+                            Issue Voucher
+                          </button>
+                        )}
+
+                        {req.status === 'PAID' && (
+                          <span className="text-[11px] text-slate-400 font-mono">Voucher Issued</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -526,68 +543,76 @@ export const ExpensesView: React.FC = () => {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                <tr>
-                  <th className="p-2.5">Voucher No.</th>
-                  <th className="p-2.5">Date</th>
-                  <th className="p-2.5">Payee & Purpose</th>
-                  <th className="p-2.5">Method</th>
-                  <th className="p-2.5 text-right">Gross Amount</th>
-                  <th className="p-2.5 text-right">WHT Deducted</th>
-                  <th className="p-2.5 text-right">Net Disbursed</th>
-                  <th className="p-2.5 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {vouchers.map((v) => (
-                  <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                      {v.voucherNumber}
-                    </td>
-                    <td className="p-2.5 text-slate-500">{v.voucherDate}</td>
-                    <td className="p-2.5">
-                      <div className="font-semibold text-slate-900 dark:text-white">{v.payeeName}</div>
-                      <div className="text-[11px] text-slate-500">{v.purpose}</div>
-                    </td>
-                    <td className="p-2.5 text-slate-600 dark:text-slate-300">
-                      <span className="font-semibold">{v.paymentMethod}</span>
-                      {v.chequeNumber && <span className="block text-[10px] text-slate-400 font-mono">#{v.chequeNumber}</span>}
-                      {v.momoReference && <span className="block text-[10px] text-slate-400 font-mono">Ref: {v.momoReference}</span>}
-                    </td>
-                    <td className="p-2.5 text-right font-mono font-semibold text-slate-700 dark:text-slate-300">
-                      GHS {(Number(v.grossAmountPesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="p-2.5 text-right font-mono text-amber-600 dark:text-amber-400">
-                      {v.withholdingTaxPesewas > 0n ? (
-                        <>
-                          GHS {(Number(v.withholdingTaxPesewas) / 100).toFixed(2)}
-                          <span className="text-[10px] text-slate-400 block">({v.withholdingTaxRate}%)</span>
-                        </>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td className="p-2.5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                      GHS {(Number(v.netPayablePesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="p-2.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPrintVoucher(v)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-xs font-semibold text-[var(--text-primary)] border border-[var(--surface-border)] transition"
-                        title="View and print official payment voucher"
-                      >
-                        <Printer className="w-3.5 h-3.5 text-[var(--accent)]" />
-                        <span>Print</span>
-                      </button>
-                    </td>
+          {vouchers.length === 0 ? (
+            <EmptyState
+              message="No payment vouchers prepared yet."
+              actionLabel="New Payment Voucher"
+              onAction={() => setIsNewVoucherOpen(true)}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  <tr>
+                    <th className="p-2.5">Voucher No.</th>
+                    <th className="p-2.5">Date</th>
+                    <th className="p-2.5">Payee & Purpose</th>
+                    <th className="p-2.5">Method</th>
+                    <th className="p-2.5 text-right">Gross Amount</th>
+                    <th className="p-2.5 text-right">WHT Deducted</th>
+                    <th className="p-2.5 text-right">Net Disbursed</th>
+                    <th className="p-2.5 text-center">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {vouchers.map((v) => (
+                    <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                        {v.voucherNumber}
+                      </td>
+                      <td className="p-2.5 text-slate-500">{v.voucherDate}</td>
+                      <td className="p-2.5">
+                        <div className="font-semibold text-slate-900 dark:text-white">{v.payeeName}</div>
+                        <div className="text-[11px] text-slate-500">{v.purpose}</div>
+                      </td>
+                      <td className="p-2.5 text-slate-600 dark:text-slate-300">
+                        <span className="font-semibold">{v.paymentMethod}</span>
+                        {v.chequeNumber && <span className="block text-[10px] text-slate-400 font-mono">#{v.chequeNumber}</span>}
+                        {v.momoReference && <span className="block text-[10px] text-slate-400 font-mono">Ref: {v.momoReference}</span>}
+                      </td>
+                      <td className="p-2.5 text-right font-mono font-semibold text-slate-700 dark:text-slate-300">
+                        GHS {(Number(v.grossAmountPesewas) / 100).toFixed(2)}
+                      </td>
+                      <td className="p-2.5 text-right font-mono text-amber-600 dark:text-amber-400">
+                        {v.withholdingTaxPesewas > 0n ? (
+                          <>
+                            GHS {(Number(v.withholdingTaxPesewas) / 100).toFixed(2)}
+                            <span className="text-[10px] text-slate-400 block">({v.withholdingTaxRate}%)</span>
+                          </>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                      <td className="p-2.5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                        GHS {(Number(v.netPayablePesewas) / 100).toFixed(2)}
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPrintVoucher(v)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-xs font-semibold text-[var(--text-primary)] border border-[var(--surface-border)] transition"
+                          title="View and print official payment voucher"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-[var(--accent)]" />
+                          <span>Print</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -652,46 +677,54 @@ export const ExpensesView: React.FC = () => {
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  <tr>
-                    <th className="p-2.5">Date</th>
-                    <th className="p-2.5">Description</th>
-                    <th className="p-2.5">Category</th>
-                    <th className="p-2.5">Paid To</th>
-                    <th className="p-2.5 text-right">Amount (GHS)</th>
-                    <th className="p-2.5 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {pettyCashTransactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="p-2.5 text-slate-500">{tx.date}</td>
-                      <td className="p-2.5 font-medium text-slate-900 dark:text-white">
-                        {tx.description}
-                      </td>
-                      <td className="p-2.5 text-slate-600 dark:text-slate-300">{tx.category}</td>
-                      <td className="p-2.5 text-slate-600 dark:text-slate-300">{tx.paidTo}</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                        GHS {(Number(tx.amountPesewas) / 100).toFixed(2)}
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            tx.isReplenished
-                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                          }`}
-                        >
-                          {tx.isReplenished ? 'Replenished' : 'Pending Replenishment'}
-                        </span>
-                      </td>
+            {pettyCashTransactions.length === 0 ? (
+              <EmptyState
+                message="No petty cash disbursements recorded for this float."
+                actionLabel="Disburse Minor Expense"
+                onAction={() => setIsDisburseOpen(true)}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    <tr>
+                      <th className="p-2.5">Date</th>
+                      <th className="p-2.5">Description</th>
+                      <th className="p-2.5">Category</th>
+                      <th className="p-2.5">Paid To</th>
+                      <th className="p-2.5 text-right">Amount (GHS)</th>
+                      <th className="p-2.5 text-center">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {pettyCashTransactions.map((tx) => (
+                      <tr key={tx.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="p-2.5 text-slate-500">{tx.date}</td>
+                        <td className="p-2.5 font-medium text-slate-900 dark:text-white">
+                          {tx.description}
+                        </td>
+                        <td className="p-2.5 text-slate-600 dark:text-slate-300">{tx.category}</td>
+                        <td className="p-2.5 text-slate-600 dark:text-slate-300">{tx.paidTo}</td>
+                        <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                          GHS {(Number(tx.amountPesewas) / 100).toFixed(2)}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              tx.isReplenished
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+                            }`}
+                          >
+                            {tx.isReplenished ? 'Replenished' : 'Pending Replenishment'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -717,35 +750,43 @@ export const ExpensesView: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {vendors.map((v) => (
-              <div
-                key={v.id}
-                className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-2 text-xs"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="font-bold text-slate-900 dark:text-white text-sm">{v.name}</div>
-                  <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[10px] font-semibold">
-                    {v.category}
-                  </span>
-                </div>
+          {vendors.length === 0 ? (
+            <EmptyState
+              message="No church vendors or contractors registered yet."
+              actionLabel="Register Vendor"
+              onAction={() => setIsAddVendorOpen(true)}
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {vendors.map((v) => (
+                <div
+                  key={v.id}
+                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-2 text-xs"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="font-bold text-slate-900 dark:text-white text-sm">{v.name}</div>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[10px] font-semibold">
+                      {v.category}
+                    </span>
+                  </div>
 
-                <div className="space-y-1 text-slate-600 dark:text-slate-400">
-                  {v.contactPhone && <div>Phone: {v.contactPhone}</div>}
-                  {v.tinOrGhanaCard && <div>TIN / Ghana Card: <span className="font-mono text-slate-800 dark:text-slate-200">{v.tinOrGhanaCard}</span></div>}
-                  {v.momoNumber && <div>MoMo: {v.momoNumber}</div>}
-                  {v.bankDetails && <div>Bank: {v.bankDetails}</div>}
-                </div>
+                  <div className="space-y-1 text-slate-600 dark:text-slate-400">
+                    {v.contactPhone && <div>Phone: {v.contactPhone}</div>}
+                    {v.tinOrGhanaCard && <div>TIN / Ghana Card: <span className="font-mono text-slate-800 dark:text-slate-200">{v.tinOrGhanaCard}</span></div>}
+                    {v.momoNumber && <div>MoMo: {v.momoNumber}</div>}
+                    {v.bankDetails && <div>Bank: {v.bankDetails}</div>}
+                  </div>
 
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-baseline">
-                  <span className="text-[11px] text-slate-500">Total Disbursed:</span>
-                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                    GHS {(Number(v.totalPaidGhsPesewas) / 100).toFixed(2)}
-                  </span>
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-700/60 flex justify-between items-baseline">
+                    <span className="text-[11px] text-slate-500">Total Disbursed:</span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      GHS {(Number(v.totalPaidGhsPesewas) / 100).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -803,58 +844,66 @@ export const ExpensesView: React.FC = () => {
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  <tr>
-                    <th className="p-2.5">Asset Tag</th>
-                    <th className="p-2.5">Asset Name & Category</th>
-                    <th className="p-2.5">Location</th>
-                    <th className="p-2.5">Purchased</th>
-                    <th className="p-2.5 text-right">Cost (GHS)</th>
-                    <th className="p-2.5 text-right">Annual Dep.</th>
-                    <th className="p-2.5 text-right">Acc. Dep.</th>
-                    <th className="p-2.5 text-right">Net Book Value</th>
-                    <th className="p-2.5 text-center">Condition</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {assets.map((ast) => {
-                    const dep = assetSummary.results.find((r) => r.assetId === ast.id);
-                    return (
-                      <tr key={ast.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {ast.assetTag}
-                        </td>
-                        <td className="p-2.5">
-                          <div className="font-semibold text-slate-900 dark:text-white">{ast.name}</div>
-                          <div className="text-[11px] text-slate-500">{ast.category}</div>
-                        </td>
-                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{ast.location}</td>
-                        <td className="p-2.5 text-slate-500">{ast.purchaseDate}</td>
-                        <td className="p-2.5 text-right font-mono font-semibold text-slate-900 dark:text-white">
-                          GHS {(Number(ast.purchaseCostPesewas) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-right font-mono text-slate-500">
-                          GHS {(Number(dep?.annualDepreciationPesewas || 0n) / 100).toFixed(2)}/yr
-                        </td>
-                        <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">
-                          GHS {(Number(dep?.accumulatedDepreciationPesewas || 0n) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400">
-                          GHS {(Number(dep?.netBookValuePesewas || 0n) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold">
-                            {ast.condition}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {assets.length === 0 ? (
+              <EmptyState
+                message="No fixed assets logged in the church asset register yet."
+                actionLabel="Register Fixed Asset"
+                onAction={() => setIsAddAssetOpen(true)}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    <tr>
+                      <th className="p-2.5">Asset Tag</th>
+                      <th className="p-2.5">Asset Name & Category</th>
+                      <th className="p-2.5">Location</th>
+                      <th className="p-2.5">Purchased</th>
+                      <th className="p-2.5 text-right">Cost (GHS)</th>
+                      <th className="p-2.5 text-right">Annual Dep.</th>
+                      <th className="p-2.5 text-right">Acc. Dep.</th>
+                      <th className="p-2.5 text-right">Net Book Value</th>
+                      <th className="p-2.5 text-center">Condition</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {assets.map((ast) => {
+                      const dep = assetSummary.results.find((r) => r.assetId === ast.id);
+                      return (
+                        <tr key={ast.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                            {ast.assetTag}
+                          </td>
+                          <td className="p-2.5">
+                            <div className="font-semibold text-slate-900 dark:text-white">{ast.name}</div>
+                            <div className="text-[11px] text-slate-500">{ast.category}</div>
+                          </td>
+                          <td className="p-2.5 text-slate-600 dark:text-slate-400">{ast.location}</td>
+                          <td className="p-2.5 text-slate-500">{ast.purchaseDate}</td>
+                          <td className="p-2.5 text-right font-mono font-semibold text-slate-900 dark:text-white">
+                            GHS {(Number(ast.purchaseCostPesewas) / 100).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-slate-500">
+                            GHS {(Number(dep?.annualDepreciationPesewas || 0n) / 100).toFixed(2)}/yr
+                          </td>
+                          <td className="p-2.5 text-right font-mono text-rose-600 dark:text-rose-400">
+                            GHS {(Number(dep?.accumulatedDepreciationPesewas || 0n) / 100).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400">
+                            GHS {(Number(dep?.netBookValuePesewas || 0n) / 100).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold">
+                              {ast.condition}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

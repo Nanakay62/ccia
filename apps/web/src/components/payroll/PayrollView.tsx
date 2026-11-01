@@ -16,6 +16,8 @@ import {
 import { usePayroll } from '../../context/PayrollContext.js';
 import type { EmploymentType } from '@church/domain';
 import { useAuth } from '../../context/AuthContext.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
+import { EmptyState } from '../ui/EmptyState.js';
 
 export const PayrollView: React.FC = () => {
   const { staffList, payrollRuns, activeRun, addStaffMember, runMonthlyPayroll, getPayslipsForRun } = usePayroll();
@@ -24,6 +26,9 @@ export const PayrollView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'RUNS' | 'STAFF' | 'PAYSLIPS'>('RUNS');
   const [isNewRunOpen, setIsNewRunOpen] = useState(false);
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
+
+  useModalEscape(isNewRunOpen, () => setIsNewRunOpen(false));
+  useModalEscape(isAddStaffOpen, () => setIsAddStaffOpen(false));
 
   // New Payroll Run Form State
   const [runMonth, setRunMonth] = useState(10);
@@ -199,6 +204,14 @@ export const PayrollView: React.FC = () => {
       </div>
 
       {/* Tab 1: Monthly Payroll Runs */}
+      {activeTab === 'RUNS' && !currentRun && (
+        <EmptyState
+          message="No monthly payroll runs processed yet."
+          actionLabel="Run Monthly Payroll"
+          onAction={() => setIsNewRunOpen(true)}
+        />
+      )}
+
       {activeTab === 'RUNS' && currentRun && (
         <div className="space-y-6">
           {/* Executive Summary Cards */}
@@ -306,93 +319,109 @@ export const PayrollView: React.FC = () => {
             <span className="text-xs text-slate-400">{staffList.length} staff registered</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {staffList.map((s) => (
-              <div key={s.id} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border space-y-3 text-xs">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="font-mono text-[10px] text-blue-600 font-bold">{s.staffNumber}</span>
-                    <h4 className="font-bold text-sm text-slate-900 dark:text-white mt-0.5">{s.fullName}</h4>
-                    <p className="text-slate-500">{s.roleTitle} • {s.department}</p>
+          {staffList.length === 0 ? (
+            <EmptyState
+              message="No church staff members registered yet."
+              actionLabel="Add Staff Member"
+              onAction={() => setIsAddStaffOpen(true)}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {staffList.map((s) => (
+                <div key={s.id} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border space-y-3 text-xs">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-mono text-[10px] text-blue-600 font-bold">{s.staffNumber}</span>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white mt-0.5">{s.fullName}</h4>
+                      <p className="text-slate-500">{s.roleTitle} • {s.department}</p>
+                    </div>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.employmentType === 'PASTORAL_CLERGY' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                      {s.employmentType.replace(/_/g, ' ')}
+                    </span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.employmentType === 'PASTORAL_CLERGY' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                    {s.employmentType.replace(/_/g, ' ')}
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t text-[11px]">
-                  <div>
-                    <span className="text-slate-400">Basic Salary:</span>
-                    <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                      GHS {(Number(s.basicSalaryPesewas) / 100).toFixed(2)}
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t text-[11px]">
+                    <div>
+                      <span className="text-slate-400">Basic Salary:</span>
+                      <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                        GHS {(Number(s.basicSalaryPesewas) / 100).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Total Allowances:</span>
+                      <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                        GHS {((Number(s.housingAllowancePesewas + s.transportAllowancePesewas + s.pastoralResponsibilityPesewas)) / 100).toFixed(2)}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <span className="text-slate-400">Total Allowances:</span>
-                    <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                      GHS {((Number(s.housingAllowancePesewas + s.transportAllowancePesewas + s.pastoralResponsibilityPesewas)) / 100).toFixed(2)}
-                    </div>
+
+                  <div className="text-[10px] text-slate-400 pt-1 border-t flex justify-between">
+                    <span>Pay routing: {s.bankAccountNumber ? `${s.bankName} (A/C ${s.bankAccountNumber})` : s.momoNumber ? `${s.momoNetwork} MoMo ${s.momoNumber}` : 'Cash'}</span>
+                    <span>SSNIT: {s.ssnitNumber || 'N/A'}</span>
                   </div>
                 </div>
-
-                <div className="text-[10px] text-slate-400 pt-1 border-t flex justify-between">
-                  <span>Pay routing: {s.bankAccountNumber ? `${s.bankName} (A/C ${s.bankAccountNumber})` : s.momoNumber ? `${s.momoNetwork} MoMo ${s.momoNumber}` : 'Cash'}</span>
-                  <span>SSNIT: {s.ssnitNumber || 'N/A'}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* Tab 3: Staff Payslips */}
       {activeTab === 'PAYSLIPS' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {payslips.map((slip) => (
-              <div
-                key={slip.payslipNumber}
-                className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] font-bold text-blue-600">{slip.payslipNumber}</span>
-                  <span className="text-[10px] text-slate-400">{slip.periodLabel}</span>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-900 dark:text-white">{slip.fullName}</h4>
-                  <p className="text-[11px] text-slate-400">{slip.roleTitle}</p>
-                </div>
-                <div className="pt-2 border-t space-y-1">
-                  <div className="flex justify-between text-slate-500">
-                    <span>Gross Salary:</span>
-                    <span className="font-mono font-bold text-slate-900 dark:text-white">
-                      GHS {(Number(slip.grossSalaryPesewas) / 100).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-rose-600">
-                    <span>Total Deductions:</span>
-                    <span className="font-mono font-bold">
-                      -GHS {(Number(slip.totalDeductionsPesewas) / 100).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between font-black text-emerald-600 pt-1 border-t">
-                    <span>Net Pay:</span>
-                    <span className="font-mono text-sm">{slip.netSalaryFigures}</span>
-                  </div>
-                </div>
-                <div className="text-[10px] italic text-slate-400 truncate">
-                  {slip.netSalaryInWords}
-                </div>
-                <button
-                  onClick={() => window.print()}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition"
+          {payslips.length === 0 ? (
+            <EmptyState
+              message="No staff payslips generated for this payroll period."
+              actionLabel="Run Monthly Payroll"
+              onAction={() => setIsNewRunOpen(true)}
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {payslips.map((slip) => (
+                <div
+                  key={slip.payslipNumber}
+                  className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 text-xs"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print Payslip</span>
-                </button>
-              </div>
-            ))}
-          </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold text-blue-600">{slip.payslipNumber}</span>
+                    <span className="text-[10px] text-slate-400">{slip.periodLabel}</span>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white">{slip.fullName}</h4>
+                    <p className="text-[11px] text-slate-400">{slip.roleTitle}</p>
+                  </div>
+                  <div className="pt-2 border-t space-y-1">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Gross Salary:</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        GHS {(Number(slip.grossSalaryPesewas) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-rose-600">
+                      <span>Total Deductions:</span>
+                      <span className="font-mono font-bold">
+                        -GHS {(Number(slip.totalDeductionsPesewas) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-black text-emerald-600 pt-1 border-t">
+                      <span>Net Pay:</span>
+                      <span className="font-mono text-sm">{slip.netSalaryFigures}</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] italic text-slate-400 truncate">
+                    {slip.netSalaryInWords}
+                  </div>
+                  <button
+                    onClick={() => window.print()}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Payslip</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -15,6 +15,8 @@ import {
 } from '@church/domain';
 import { PrintableReceiptModal } from './PrintableReceiptModal.js';
 import { MemberStatementModal } from './MemberStatementModal.js';
+import { EmptyState } from '../ui/EmptyState.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 import {
   Users,
   Search,
@@ -82,6 +84,8 @@ export const GivingDirectoryView: React.FC = () => {
   const [newFamily, setNewFamily] = useState('');
   const [newDept, setNewDept] = useState('Men Fellowship');
 
+  useModalEscape(isAddMemberOpen, () => setIsAddMemberOpen(false));
+
   // New Giving Entry Form State
   const [selectedMemberId, setSelectedMemberId] = useState<string>('mem-001');
   const [givingFundId, setGivingFundId] = useState<string>('fund-gen');
@@ -100,6 +104,8 @@ export const GivingDirectoryView: React.FC = () => {
   const [pledgeMemberId, setPledgeMemberId] = useState('mem-001');
   const [pledgeCampaign, setPledgeCampaign] = useState('Auditorium Roofing 2026');
   const [pledgeTargetAmtGhs, setPledgeTargetAmtGhs] = useState('5000.00');
+
+  useModalEscape(isAddPledgeOpen, () => setIsAddPledgeOpen(false));
 
   // Filtered members
   const filteredMembers = members.filter((m) => {
@@ -319,61 +325,69 @@ export const GivingDirectoryView: React.FC = () => {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                <tr>
-                  <th className="p-2.5">Member No.</th>
-                  <th className="p-2.5">Envelope No.</th>
-                  <th className="p-2.5">Full Name</th>
-                  <th className="p-2.5">Family Group</th>
-                  <th className="p-2.5">Department</th>
-                  <th className="p-2.5">Phone (Encrypted)</th>
-                  <th className="p-2.5 text-center">Status</th>
-                  <th className="p-2.5 text-right">Statement</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {filteredMembers.map((member) => (
-                  <tr key={member.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                      {member.memberNumber}
-                    </td>
-                    <td className="p-2.5 font-mono font-semibold text-slate-700 dark:text-slate-300">
-                      {member.envelopeNumber || '-'}
-                    </td>
-                    <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                      {member.fullName}
-                    </td>
-                    <td className="p-2.5 text-slate-600 dark:text-slate-400">
-                      {member.familyGroup || '-'}
-                    </td>
-                    <td className="p-2.5 text-slate-600 dark:text-slate-400">
-                      {member.department || '-'}
-                    </td>
-                    <td className="p-2.5 text-slate-500 font-mono text-[11px]">
-                      •••• ••• {member.phoneHint || '•••'}
-                    </td>
-                    <td className="p-2.5 text-center">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold">
-                        {member.status}
-                      </span>
-                    </td>
-                    <td className="p-2.5 text-right">
-                      <button
-                        onClick={() => handleOpenMemberStatement(member)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-[11px] font-semibold border border-blue-200 dark:border-blue-800 transition"
-                        title="Generate Official Member Giving Statement"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Statement</span>
-                      </button>
-                    </td>
+          {filteredMembers.length === 0 ? (
+            <EmptyState
+              message="No members found matching your search criteria."
+              actionLabel="Add New Member"
+              onAction={() => setIsAddMemberOpen(true)}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  <tr>
+                    <th className="p-2.5">Member No.</th>
+                    <th className="p-2.5">Envelope No.</th>
+                    <th className="p-2.5">Full Name</th>
+                    <th className="p-2.5">Family Group</th>
+                    <th className="p-2.5">Department</th>
+                    <th className="p-2.5">Phone (Encrypted)</th>
+                    <th className="p-2.5 text-center">Status</th>
+                    <th className="p-2.5 text-right">Statement</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {filteredMembers.map((member) => (
+                    <tr key={member.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                        {member.memberNumber}
+                      </td>
+                      <td className="p-2.5 font-mono font-semibold text-slate-700 dark:text-slate-300">
+                        {member.envelopeNumber || '-'}
+                      </td>
+                      <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
+                        {member.fullName}
+                      </td>
+                      <td className="p-2.5 text-slate-600 dark:text-slate-400">
+                        {member.familyGroup || '-'}
+                      </td>
+                      <td className="p-2.5 text-slate-600 dark:text-slate-400">
+                        {member.department || '-'}
+                      </td>
+                      <td className="p-2.5 text-slate-500 font-mono text-[11px]">
+                        •••• ••• {member.phoneHint || '•••'}
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold">
+                          {member.status}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-right">
+                        <button
+                          onClick={() => handleOpenMemberStatement(member)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-[11px] font-semibold border border-blue-200 dark:border-blue-800 transition"
+                          title="Generate Official Member Giving Statement"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Statement</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -522,50 +536,58 @@ export const GivingDirectoryView: React.FC = () => {
               Recent Member Contributions ({maskedGivingList.length})
             </h3>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  <tr>
-                    <th className="p-2.5">Receipt No.</th>
-                    <th className="p-2.5">Date</th>
-                    <th className="p-2.5">Donor Name</th>
-                    <th className="p-2.5">Category</th>
-                    <th className="p-2.5">Fund</th>
-                    <th className="p-2.5">Method</th>
-                    <th className="p-2.5 text-right">Amount</th>
-                    <th className="p-2.5 text-center">Receipt</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {maskedGivingList.map((rec) => (
-                    <tr key={rec.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                        {rec.receiptNumber}
-                      </td>
-                      <td className="p-2.5 text-slate-600 dark:text-slate-400">{rec.serviceDate}</td>
-                      <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                        {rec.memberName}
-                      </td>
-                      <td className="p-2.5 text-slate-700 dark:text-slate-300">{rec.category}</td>
-                      <td className="p-2.5 text-slate-500">{rec.fundName}</td>
-                      <td className="p-2.5 text-slate-600 dark:text-slate-400">{rec.paymentMethod}</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                        {rec.currency} {(Number(rec.amountPesewas) / 100).toFixed(2)}
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <button
-                          onClick={() => handlePrintExistingReceipt(rec)}
-                          className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400"
-                          title="View / Print Receipt"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-                      </td>
+            {maskedGivingList.length === 0 ? (
+              <EmptyState
+                message="No member contribution records logged yet."
+                actionLabel="Record Giving"
+                onAction={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    <tr>
+                      <th className="p-2.5">Receipt No.</th>
+                      <th className="p-2.5">Date</th>
+                      <th className="p-2.5">Donor Name</th>
+                      <th className="p-2.5">Category</th>
+                      <th className="p-2.5">Fund</th>
+                      <th className="p-2.5">Method</th>
+                      <th className="p-2.5 text-right">Amount</th>
+                      <th className="p-2.5 text-center">Receipt</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {maskedGivingList.map((rec) => (
+                      <tr key={rec.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
+                          {rec.receiptNumber}
+                        </td>
+                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{rec.serviceDate}</td>
+                        <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
+                          {rec.memberName}
+                        </td>
+                        <td className="p-2.5 text-slate-700 dark:text-slate-300">{rec.category}</td>
+                        <td className="p-2.5 text-slate-500">{rec.fundName}</td>
+                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{rec.paymentMethod}</td>
+                        <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                          {rec.currency} {(Number(rec.amountPesewas) / 100).toFixed(2)}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <button
+                            onClick={() => handlePrintExistingReceipt(rec)}
+                            className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400"
+                            title="View / Print Receipt"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -616,71 +638,79 @@ export const GivingDirectoryView: React.FC = () => {
               Individual Pledge Records ({maskedPledgesList.length})
             </h3>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  <tr>
-                    <th className="p-2.5">Member Name</th>
-                    <th className="p-2.5">Campaign</th>
-                    <th className="p-2.5">Target Date</th>
-                    <th className="p-2.5 text-right">Pledged (GHS)</th>
-                    <th className="p-2.5 text-right">Paid (GHS)</th>
-                    <th className="p-2.5 text-right">Outstanding</th>
-                    <th className="p-2.5 text-center">Status</th>
-                    <th className="p-2.5 text-right">Statement</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {maskedPledgesList.map((pld) => {
-                    const outstanding = pld.targetAmountPesewas - pld.paidAmountPesewas;
-                    return (
-                      <tr key={pld.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                          {pld.memberName}
-                        </td>
-                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{pld.campaignName}</td>
-                        <td className="p-2.5 text-slate-500">{pld.targetDate || '-'}</td>
-                        <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                          GHS {(Number(pld.targetAmountPesewas) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          GHS {(Number(pld.paidAmountPesewas) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
-                          GHS {(Number(outstanding > 0n ? outstanding : 0n) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              pld.status === 'FULFILLED'
-                                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                                : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
-                            }`}
-                          >
-                            {pld.status}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right">
-                          <button
-                            onClick={() => {
-                              const mem = members.find((m) => m.id === pld.memberId);
-                              if (mem) {
-                                handleOpenMemberStatement(mem);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-medium transition"
-                            title="Generate Member Giving Statement"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Statement</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {maskedPledgesList.length === 0 ? (
+              <EmptyState
+                message="No active pledge commitments recorded yet."
+                actionLabel="Create New Pledge"
+                onAction={() => setIsAddPledgeOpen(true)}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    <tr>
+                      <th className="p-2.5">Member Name</th>
+                      <th className="p-2.5">Campaign</th>
+                      <th className="p-2.5">Target Date</th>
+                      <th className="p-2.5 text-right">Pledged (GHS)</th>
+                      <th className="p-2.5 text-right">Paid (GHS)</th>
+                      <th className="p-2.5 text-right">Outstanding</th>
+                      <th className="p-2.5 text-center">Status</th>
+                      <th className="p-2.5 text-right">Statement</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {maskedPledgesList.map((pld) => {
+                      const outstanding = pld.targetAmountPesewas - pld.paidAmountPesewas;
+                      return (
+                        <tr key={pld.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
+                            {pld.memberName}
+                          </td>
+                          <td className="p-2.5 text-slate-600 dark:text-slate-400">{pld.campaignName}</td>
+                          <td className="p-2.5 text-slate-500">{pld.targetDate || '-'}</td>
+                          <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                            GHS {(Number(pld.targetAmountPesewas) / 100).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            GHS {(Number(pld.paidAmountPesewas) / 100).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                            GHS {(Number(outstanding > 0n ? outstanding : 0n) / 100).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                pld.status === 'FULFILLED'
+                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                  : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
+                              }`}
+                            >
+                              {pld.status}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right">
+                            <button
+                              onClick={() => {
+                                const mem = members.find((m) => m.id === pld.memberId);
+                                if (mem) {
+                                  handleOpenMemberStatement(mem);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-medium transition"
+                              title="Generate Member Giving Statement"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Statement</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../context/AuthContext.js';
 import { useLedger } from '../context/LedgerContext.js';
 import { hasPermission } from '@church/domain';
+import { useModalEscape } from '../utils/useModalEscape.js';
 
 export type NavTab =
   | 'dashboard'
@@ -36,6 +37,7 @@ export type NavTab =
 interface NavigationProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
+  onOpenUserManual?: () => void;
   className?: string;
 }
 
@@ -55,12 +57,15 @@ interface NavGroupDef {
 export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   onSelectTab,
+  onOpenUserManual,
   className = '',
 }) => {
   const { currentUser } = useAuth();
   const { trialBalance } = useLedger();
   const role = currentUser.role;
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+
+  useModalEscape(isMobileDrawerOpen, () => setIsMobileDrawerOpen(false));
 
   // Grouped Navigation structure per Section 2: Daily, Books, People, Reports, System
   const navGroups: NavGroupDef[] = [
@@ -232,7 +237,17 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
 
         {/* Footer info block */}
-        <div className="pt-3 border-t border-[var(--surface-border-subtle)] px-3 text-[11px] text-[var(--text-muted)]">
+        <div className="pt-3 border-t border-[var(--surface-border-subtle)] px-3 text-[11px] text-[var(--text-muted)] space-y-2">
+          {onOpenUserManual && (
+            <button
+              onClick={onOpenUserManual}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[var(--radius)] text-xs text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] font-medium border border-[var(--surface-border)] transition"
+              title="Open Platform User Manual"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+              <span>User Manual (Word/PDF)</span>
+            </button>
+          )}
           <div>Accra Main Branch</div>
           <div>Offline Ledger v1.0</div>
         </div>
@@ -354,6 +369,21 @@ export const Navigation: React.FC<NavigationProps> = ({
                   );
                 })}
             </div>
+
+            {onOpenUserManual && (
+              <div className="pt-2 border-t border-[var(--surface-border)]">
+                <button
+                  onClick={() => {
+                    setIsMobileDrawerOpen(false);
+                    onOpenUserManual();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)] hover:bg-[var(--surface-border-subtle)] text-[var(--accent)] font-semibold text-xs border border-[var(--surface-border)] min-h-[44px] transition"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>Open Platform User Manual (Word / PDF)</span>
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}

@@ -110,6 +110,12 @@
     user-select: text;
   }
 
+  /* Accessible focus indicators for keyboard navigation */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   /* Headings: Serif face for ledger/book feel */
   h1, h2, h3, .font-heading {
     font-family: var(--font-serif);

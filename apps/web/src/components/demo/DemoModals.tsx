@@ -2,6 +2,7 @@ import React from 'react';
 import { useDemo } from '../../context/DemoContext.js';
 import { Button } from '../ui/Button.js';
 import { RotateCcw, LogOut } from 'lucide-react';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 export const DemoModals: React.FC = () => {
   const {
@@ -12,6 +13,9 @@ export const DemoModals: React.FC = () => {
     confirmResetDemoData,
     cancelResetDemoData,
   } = useDemo();
+
+  useModalEscape(isExitConfirmOpen, cancelExitDemoMode);
+  useModalEscape(isResetConfirmOpen, cancelResetDemoData);
 
   return (
     <>

@@ -16,6 +16,7 @@ import { numberToWordsGhs } from '@church/domain';
 import { Printer, X, FileSpreadsheet } from 'lucide-react';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface PrintableCountingSheetModalProps {
   sheet: CountingSheet | null;
@@ -28,6 +29,8 @@ export const PrintableCountingSheetModal: React.FC<PrintableCountingSheetModalPr
   isOpen,
   onClose,
 }) => {
+  useModalEscape(isOpen, onClose);
+
   if (!isOpen || !sheet) return null;
 
   const handlePrint = () => {

@@ -14,6 +14,7 @@ import { numberToWordsGhs } from '@church/domain';
 import { Printer, X, Receipt } from 'lucide-react';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface PrintableVoucherModalProps {
   voucher: PaymentVoucher | null;
@@ -26,6 +27,8 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  useModalEscape(isOpen, onClose);
+
   if (!isOpen || !voucher) return null;
 
   const handlePrint = () => {

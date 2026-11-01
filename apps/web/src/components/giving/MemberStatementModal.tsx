@@ -10,6 +10,7 @@ import { X, Printer, Heart } from 'lucide-react';
 import type { MemberGivingStatement } from '@church/domain';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface MemberStatementModalProps {
   isOpen: boolean;
@@ -22,6 +23,8 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
   onClose,
   statement,
 }) => {
+  useModalEscape(isOpen, onClose);
+
   if (!isOpen || !statement) return null;
 
   return (

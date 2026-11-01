@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth, SAMPLE_USERS } from '../context/AuthContext.js';
 import { Check, Shield, X } from 'lucide-react';
+import { useModalEscape } from '../utils/useModalEscape.js';
 
 interface Props {
   isOpen: boolean;
@@ -9,6 +10,8 @@ interface Props {
 
 export const RoleSwitcherModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { currentUser, switchUser } = useAuth();
+
+  useModalEscape(isOpen, onClose);
 
   if (!isOpen) return null;
 

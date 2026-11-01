@@ -33,6 +33,8 @@ import {
   Printer,
 } from 'lucide-react';
 import { PrintableCountingSheetModal } from './PrintableCountingSheetModal.js';
+import { EmptyState } from '../ui/EmptyState.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 export const CountingSheetView: React.FC = () => {
   const { currentUser } = useAuth();
@@ -40,6 +42,9 @@ export const CountingSheetView: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'NEW_SHEET' | 'HISTORY'>('NEW_SHEET');
   const [printableSheet, setPrintableSheet] = useState<CountingSheet | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState<CountingSheet | null>(null);
+
+  useModalEscape(Boolean(selectedSheet), () => setSelectedSheet(null));
 
   // New Counting Sheet State
   const [serviceDate, setServiceDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -95,9 +100,6 @@ export const CountingSheetView: React.FC = () => {
   const [counter1Name, setCounter1Name] = useState('Sister Grace Addo (Counter 1)');
   const [counter2Id, setCounter2Id] = useState('user-0004-counter2');
   const [counter2Name, setCounter2Name] = useState('Brother Emmanuel Ofori (Counter 2)');
-
-  // Selected sheet for details view
-  const [selectedSheet, setSelectedSheet] = useState<CountingSheet | null>(null);
 
   // Status message
   const [postSuccess, setPostSuccess] = useState<string | null>(null);
@@ -777,7 +779,14 @@ export const CountingSheetView: React.FC = () => {
             <span>Service Counting Sheets History</span>
           </h3>
 
-          <div className="overflow-x-auto">
+          {countingSheets.length === 0 ? (
+            <EmptyState
+              message="No service counting sheets recorded yet."
+              actionLabel="Start New Counting Sheet"
+              onAction={() => setActiveTab('NEW_SHEET')}
+            />
+          ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                 <tr>
@@ -875,6 +884,7 @@ export const CountingSheetView: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 

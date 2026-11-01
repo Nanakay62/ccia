@@ -11,10 +11,12 @@ import {
   UserCheck,
   Calendar,
   ChevronDown,
+  BookOpen,
 } from 'lucide-react';
 
 interface HeaderProps {
   onOpenRoleSwitcher: () => void;
+  onOpenUserManual?: () => void;
   isDark: boolean;
   onToggleDark: () => void;
   onToggleTodaySlideOver?: () => void;
@@ -23,6 +25,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenRoleSwitcher,
+  onOpenUserManual,
   isDark,
   onToggleDark,
   onToggleTodaySlideOver,
@@ -120,6 +123,18 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
           </button>
+
+          {/* User Manual Guide Button */}
+          {onOpenUserManual && (
+            <button
+              onClick={onOpenUserManual}
+              className="p-2 rounded-[var(--radius)] border border-[var(--surface-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+              title="Platform User Manual (Word & PDF Guides)"
+              aria-label="Open User Manual"
+            >
+              <BookOpen className="w-4 h-4 text-[var(--accent)]" />
+            </button>
+          )}
 
           {/* Theme Toggle Button */}
           <button

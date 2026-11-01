@@ -6,6 +6,7 @@ import { Button } from './ui/Button.js';
 import { RefreshCw, X, Laptop, Cloud, CloudOff, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { NeedsAttentionModal } from './sync/NeedsAttentionModal.js';
 import { ConflictResolutionModal } from './sync/ConflictResolutionModal.js';
+import { useModalEscape } from '../utils/useModalEscape.js';
 
 interface SyncIndicatorProps {
   embedded?: boolean;
@@ -28,6 +29,10 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ embedded: _embedde
   const [isOpen, setIsOpen] = useState(false);
   const [showAttentionModal, setShowAttentionModal] = useState(false);
   const [showConflictModal, setShowConflictModal] = useState(false);
+
+  useModalEscape(isOpen, () => setIsOpen(false));
+  useModalEscape(showAttentionModal, () => setShowAttentionModal(false));
+  useModalEscape(showConflictModal, () => setShowConflictModal(false));
 
   const formatLastSync = () => {
     if (!lastSyncedAt) return 'Never synced';

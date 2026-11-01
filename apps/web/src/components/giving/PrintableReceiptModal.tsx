@@ -3,6 +3,7 @@ import type { PrintableReceipt } from '@church/domain';
 import { Printer, X, CheckCircle2 } from 'lucide-react';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface PrintableReceiptModalProps {
   receipt: PrintableReceipt | null;
@@ -15,6 +16,8 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  useModalEscape(isOpen, onClose);
+
   if (!isOpen || !receipt) return null;
 
   const handlePrint = () => {

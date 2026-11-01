@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSync } from '../../context/SyncContext.js';
 import { AlertTriangle, X, ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface NeedsAttentionModalProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ export const NeedsAttentionModal: React.FC<NeedsAttentionModalProps> = ({ isOpen
   const { rejections, dismissRejection, requeueRejection } = useSync();
   const [expandedPayloadId, setExpandedPayloadId] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState<{ [id: string]: string }>({});
+
+  useModalEscape(isOpen, onClose);
 
   if (!isOpen) return null;
 

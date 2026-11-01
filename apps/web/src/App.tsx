@@ -9,6 +9,7 @@ import { TodayPanel } from './components/ui/TodayPanel.js';
 import { useLedger } from './context/LedgerContext.js';
 import { useSync } from './context/SyncContext.js';
 import { X } from 'lucide-react';
+import { useModalEscape } from './utils/useModalEscape.js';
 
 // View Imports
 import { DashboardOverview } from './components/dashboard/DashboardOverview.js';
@@ -24,6 +25,7 @@ import { PayrollView } from './components/payroll/PayrollView.js';
 import { SettingsView } from './components/SectionViews.js';
 import { StyleGuideView } from './views/StyleGuideView.js';
 import { DemoModals } from './components/demo/DemoModals.js';
+import { UserManualModal } from './components/manual/UserManualModal.js';
 
 export const App: React.FC = () => {
   const { isLocked, currentUser } = useAuth();
@@ -39,6 +41,9 @@ export const App: React.FC = () => {
 
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [isTodaySlideOverOpen, setIsTodaySlideOverOpen] = useState(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+
+  useModalEscape(isTodaySlideOverOpen, () => setIsTodaySlideOverOpen(false));
 
   const [isDark, setIsDark] = useState(() => {
     return localStorage.getItem('church_theme') === 'dark';
@@ -99,6 +104,7 @@ export const App: React.FC = () => {
       {/* Top Bar with Single Sync Indicator, Logo, and User Menu (Section 4) */}
       <Header
         onOpenRoleSwitcher={() => setIsRoleModalOpen(true)}
+        onOpenUserManual={() => setIsManualModalOpen(true)}
         isDark={isDark}
         onToggleDark={() => setIsDark((d) => !d)}
         onToggleTodaySlideOver={() => setIsTodaySlideOverOpen((prev) => !prev)}
@@ -110,7 +116,11 @@ export const App: React.FC = () => {
          ========================================================================= */}
       <div className="flex-1 flex w-full min-h-[calc(100vh-57px)]">
         {/* Full-Height Left Sidebar flush to screen edge (248px) */}
-        <Navigation activeTab={activeTab} onSelectTab={setActiveTab} />
+        <Navigation
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+          onOpenUserManual={() => setIsManualModalOpen(true)}
+        />
 
         {/* Fluid Main Content Area */}
         <div className="flex-1 min-w-0 flex justify-center overflow-x-hidden">
@@ -254,6 +264,12 @@ export const App: React.FC = () => {
 
       {/* Demo Exit and Reset Confirmation Dialogs (Section 5.5) */}
       <DemoModals />
+
+      {/* Platform User Manual Modal (Word & PDF Guides) */}
+      <UserManualModal
+        isOpen={isManualModalOpen}
+        onClose={() => setIsManualModalOpen(false)}
+      />
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSync } from '../../context/SyncContext.js';
 import { ShieldAlert, X, Check, ArrowRight } from 'lucide-react';
+import { useModalEscape } from '../../utils/useModalEscape.js';
 
 interface ConflictResolutionModalProps {
   isOpen: boolean;
@@ -12,6 +13,8 @@ export const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = (
   onClose,
 }) => {
   const { conflicts, resolveConflict } = useSync();
+
+  useModalEscape(isOpen, onClose);
 
   if (!isOpen) return null;
 
