@@ -11,8 +11,8 @@ import { TrialBalanceView } from './components/ledger/TrialBalanceView.js';
 import { DoctorView } from './components/doctor/DoctorView.js';
 import { CountingSheetView } from './components/giving/CountingSheetView.js';
 import { GivingDirectoryView } from './components/giving/GivingDirectoryView.js';
+import { ExpensesView } from './components/expenses/ExpensesView.js';
 import {
-  ExpensesView,
   ReportsView,
   SettingsView,
 } from './components/SectionViews.js';
