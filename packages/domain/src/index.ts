@@ -9,3 +9,4 @@ export * from './doctor/index.js';
 export * from './sync/types.js';
 export * from './sync/connector.js';
 export * from './sync/backup.js';
+export * from './giving/index.js';

@@ -53,8 +53,8 @@ export interface ValidationResult {
  */
 export function validateJournalEntry(
   entry: JournalEntry,
-  accountsMap: ReadonlyMap<string, Account>,
-  fundsMap: ReadonlyMap<string, Fund>,
+  accountsMap?: ReadonlyMap<string, Account>,
+  fundsMap?: ReadonlyMap<string, Fund>,
   period?: AccountingPeriod | null
 ): ValidationResult {
   const errors: string[] = [];
@@ -80,19 +80,23 @@ export function validateJournalEntry(
     const line = entry.lines[i]!;
 
     // Account existence
-    const account = accountsMap.get(line.accountId);
-    if (!account) {
-      errors.push(`Line ${i + 1}: Account ${line.accountId} does not exist.`);
-    } else if (!account.isActive) {
-      errors.push(`Line ${i + 1}: Account ${account.name} (${account.code}) is inactive.`);
+    if (accountsMap) {
+      const account = accountsMap.get(line.accountId);
+      if (!account) {
+        errors.push(`Line ${i + 1}: Account ${line.accountId} does not exist.`);
+      } else if (!account.isActive) {
+        errors.push(`Line ${i + 1}: Account ${account.name} (${account.code}) is inactive.`);
+      }
     }
 
     // Fund existence
-    const fund = fundsMap.get(line.fundId);
-    if (!fund) {
-      errors.push(`Line ${i + 1}: Fund ${line.fundId} does not exist.`);
-    } else if (!fund.isActive) {
-      errors.push(`Line ${i + 1}: Fund ${fund.name} (${fund.code}) is inactive.`);
+    if (fundsMap) {
+      const fund = fundsMap.get(line.fundId);
+      if (!fund) {
+        errors.push(`Line ${i + 1}: Fund ${line.fundId} does not exist.`);
+      } else if (!fund.isActive) {
+        errors.push(`Line ${i + 1}: Fund ${fund.name} (${fund.code}) is inactive.`);
+      }
     }
 
     // Amount checks
@@ -143,7 +147,7 @@ export function validateJournalEntry(
   // In fund accounting, each fund must balance on its own, or use interfund accounts
   for (const [fundId, fTotals] of fundTotals.entries()) {
     if (fTotals.debit !== fTotals.credit) {
-      const fName = fundsMap.get(fundId)?.name ?? fundId;
+      const fName = fundsMap?.get(fundId)?.name ?? fundId;
       errors.push(`Fund "${fName}" is unbalanced in this entry (Dr: ${fTotals.debit}, Cr: ${fTotals.credit}). Interfund clearing requires balancing lines.`);
     }
   }

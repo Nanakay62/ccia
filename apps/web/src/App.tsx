@@ -9,10 +9,10 @@ import { DashboardView } from './components/DashboardView.js';
 import { LedgerView } from './components/ledger/LedgerView.js';
 import { TrialBalanceView } from './components/ledger/TrialBalanceView.js';
 import { DoctorView } from './components/doctor/DoctorView.js';
+import { CountingSheetView } from './components/giving/CountingSheetView.js';
+import { GivingDirectoryView } from './components/giving/GivingDirectoryView.js';
 import {
-  CountingView,
   ExpensesView,
-  GivingView,
   ReportsView,
   SettingsView,
 } from './components/SectionViews.js';
@@ -59,9 +59,9 @@ export const App: React.FC = () => {
             <TrialBalanceView onNavigateToDoctor={() => setActiveTab('doctor')} />
           )}
           {activeTab === 'doctor' && <DoctorView />}
-          {activeTab === 'counting' && <CountingView />}
+          {activeTab === 'counting' && <CountingSheetView />}
           {activeTab === 'expenses' && <ExpensesView />}
-          {activeTab === 'giving' && <GivingView />}
+          {activeTab === 'giving' && <GivingDirectoryView />}
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'settings' && <SettingsView />}
         </main>
