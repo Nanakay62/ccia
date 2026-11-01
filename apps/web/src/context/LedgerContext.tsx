@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type {
   Account,
   Fund,
@@ -15,6 +15,7 @@ import {
   createReversalEntry,
 } from '@church/domain';
 import { useAuth } from './AuthContext.js';
+import { useDemo } from './DemoContext.js';
 
 export const INITIAL_ACCOUNTS: Account[] = [
   { id: 'acct-1010', branchId: '00000000-0000-0000-0000-000000000001', code: '1010', name: 'Cash on Hand (GHS)', type: 'Asset', currency: 'GHS', isBankOrCash: true, isActive: true },
@@ -155,6 +156,7 @@ const LedgerContext = createContext<LedgerContextType | undefined>(undefined);
 
 export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
+  const { isDemoMode, demoDataset } = useDemo();
   const [accounts] = useState<Account[]>(INITIAL_ACCOUNTS);
   const [funds] = useState<Fund[]>(INITIAL_FUNDS);
   const [periods] = useState<AccountingPeriod[]>(INITIAL_PERIODS);
@@ -162,9 +164,13 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [entries, setEntries] = useState<JournalEntry[]>(() => createSeedEntries());
 
-  const trialBalance = calculateTrialBalance(entries, accounts, funds);
+  const effectiveEntries = useMemo(() => {
+    return isDemoMode ? [...entries, ...demoDataset.entries] : entries;
+  }, [isDemoMode, entries, demoDataset.entries]);
+
+  const trialBalance = calculateTrialBalance(effectiveEntries, accounts, funds);
   const doctorReport = diagnoseLedger({
-    entries,
+    entries: effectiveEntries,
     accounts,
     funds,
     periods,
@@ -311,7 +317,7 @@ export const LedgerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         funds,
         periods,
         exchangeRates,
-        entries,
+        entries: effectiveEntries,
         trialBalance,
         doctorReport,
         addEntry,

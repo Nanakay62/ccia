@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { App } from '../src/App.js';
 import { AuthProvider } from '../src/context/AuthContext.js';
+import { DemoProvider } from '../src/context/DemoContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { GivingProvider } from '../src/context/GivingContext.js';
@@ -19,21 +20,23 @@ describe('Web App Shell, Core Ledger & TB Doctor', () => {
   const renderApp = () =>
     render(
       <AuthProvider>
-        <SyncProvider>
-          <LedgerProvider>
-            <GivingProvider>
-              <ExpensesProvider>
-                <ReportsProvider>
-                  <BudgetProvider>
-                    <PayrollProvider>
-                      <App />
-                    </PayrollProvider>
-                  </BudgetProvider>
-                </ReportsProvider>
-              </ExpensesProvider>
-            </GivingProvider>
-          </LedgerProvider>
-        </SyncProvider>
+        <DemoProvider>
+          <SyncProvider>
+            <LedgerProvider>
+              <GivingProvider>
+                <ExpensesProvider>
+                  <ReportsProvider>
+                    <BudgetProvider>
+                      <PayrollProvider>
+                        <App />
+                      </PayrollProvider>
+                    </BudgetProvider>
+                  </ReportsProvider>
+                </ExpensesProvider>
+              </GivingProvider>
+            </LedgerProvider>
+          </SyncProvider>
+        </DemoProvider>
       </AuthProvider>
     );
 
@@ -119,5 +122,32 @@ describe('Web App Shell, Core Ledger & TB Doctor', () => {
 
     // Should unlock and show dashboard again
     expect(screen.getByText(/Accra Central Church/i)).toBeDefined();
+  });
+
+  it('toggles Demo Mode on and off, loading 300 members and displaying sandbox banner', () => {
+    renderApp();
+
+    // Toggle demo mode on
+    const demoBtn = screen.getByTitle(/Toggle Demo Mode/i);
+    fireEvent.click(demoBtn);
+
+    // Sandbox banner should appear
+    expect(screen.getByText(/Demo Mode Active:/i)).toBeDefined();
+    expect(screen.getByText(/300 Ghanaian church members/i)).toBeDefined();
+
+    // Navigate to Giving Directory
+    const givingTab = screen.getAllByText('Giving Directory')[0]!;
+    fireEvent.click(givingTab);
+
+    // Should display 300 members in the directory tab
+    expect(screen.getByText(/Member Directory \(300\)/i)).toBeDefined();
+
+    // Toggle demo mode off
+    const exitDemoBtn = screen.getByRole('button', { name: /Exit Demo Mode/i });
+    fireEvent.click(exitDemoBtn);
+
+    // Sandbox banner disappears and returns to default seeded members
+    expect(screen.queryByText(/Demo Mode Active:/i)).toBeNull();
+    expect(screen.getByText(/Member Directory \(5\)/i)).toBeDefined();
   });
 });

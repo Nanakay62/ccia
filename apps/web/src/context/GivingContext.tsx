@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type {
   Member,
   Pledge,
@@ -22,6 +22,7 @@ import {
 import { useAuth } from './AuthContext.js';
 import { useLedger } from './LedgerContext.js';
 import { useSync } from './SyncContext.js';
+import { useDemo } from './DemoContext.js';
 
 export const SEED_MEMBERS: Member[] = [
   {
@@ -296,6 +297,7 @@ const GivingContext = createContext<GivingContextType | undefined>(undefined);
 
 export const GivingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
+  const { isDemoMode, demoDataset } = useDemo();
   const { addEntry } = useLedger();
   const { enqueueItem } = useSync();
 
@@ -303,6 +305,26 @@ export const GivingProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [pledges, setPledges] = useState<Pledge[]>(SEED_PLEDGES);
   const [givingRecords, setGivingRecords] = useState<MemberGivingRecord[]>(SEED_GIVING_RECORDS);
   const [countingSheets, setCountingSheets] = useState<CountingSheet[]>(SEED_COUNTING_SHEETS);
+
+  const effectiveMembers = useMemo(() => {
+    return isDemoMode ? (demoDataset.members as Member[]) : members;
+  }, [isDemoMode, demoDataset.members, members]);
+
+  const effectivePledges = useMemo(() => {
+    return isDemoMode ? (demoDataset.pledges as Pledge[]) : pledges;
+  }, [isDemoMode, demoDataset.pledges, pledges]);
+
+  const effectiveGivingRecords = useMemo(() => {
+    return isDemoMode
+      ? ([...givingRecords, ...demoDataset.givingRecords] as MemberGivingRecord[])
+      : givingRecords;
+  }, [isDemoMode, demoDataset.givingRecords, givingRecords]);
+
+  const effectiveCountingSheets = useMemo(() => {
+    return isDemoMode
+      ? ([...countingSheets, ...demoDataset.countingSheets] as CountingSheet[])
+      : countingSheets;
+  }, [isDemoMode, demoDataset.countingSheets, countingSheets]);
 
   const addMember = useCallback(
     (memberData: Omit<Member, 'id' | 'rowVersion'>) => {
@@ -513,21 +535,21 @@ export const GivingProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Return giving records with donor names masked if current role lacks permission
   const getMaskedGivingRecords = useCallback(() => {
-    return givingRecords.map((r) => maskGivingRecordForRole(r, currentUser.role));
-  }, [givingRecords, currentUser.role]);
+    return effectiveGivingRecords.map((r) => maskGivingRecordForRole(r, currentUser.role));
+  }, [effectiveGivingRecords, currentUser.role]);
 
   // Return pledges with donor names masked if current role lacks permission
   const getMaskedPledges = useCallback(() => {
-    return pledges.map((p) => maskPledgeForRole(p, currentUser.role));
-  }, [pledges, currentUser.role]);
+    return effectivePledges.map((p) => maskPledgeForRole(p, currentUser.role));
+  }, [effectivePledges, currentUser.role]);
 
   return (
     <GivingContext.Provider
       value={{
-        members,
-        pledges,
-        givingRecords,
-        countingSheets,
+        members: effectiveMembers,
+        pledges: effectivePledges,
+        givingRecords: effectiveGivingRecords,
+        countingSheets: effectiveCountingSheets,
         addMember,
         updateMember,
         recordPledge,

@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # =========================================================================
+  # Central PostgreSQL 15 Database (with Supabase compatibility & pgcrypto)
+  # =========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: ccia_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ccia_accounting}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ChangeMeSecurePassword2026!}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../packages/db/supabase/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ccia_accounting}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ccia_internal
+
+  # =========================================================================
+  # PowerSync Self-Hosted Service (Sync Engine for Offline-First PWA)
+  # =========================================================================
+  powersync:
+    image: journeyapps/powersync-service:latest
+    container_name: ccia_powersync
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PS_PORT: 8080
+      PS_PG_CONNECTION_URI: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-ChangeMeSecurePassword2026!}@postgres:5432/${POSTGRES_DB:-ccia_accounting}?sslmode=disable
+      PS_SYNC_RULES_PATH: /config/sync_rules.yaml
+      PS_JWT_SECRET: ${POWERSYNC_JWT_SECRET:-SuperSecretPowerSyncJwtKey2026AccraChurch}
+      PS_CLIENT_AUTH_TYPE: "custom"
+    volumes:
+      - ../packages/db/powersync/sync_rules.yaml:/config/sync_rules.yaml:ro
+    ports:
+      - "${POWERSYNC_PORT:-8080}:8080"
+    networks:
+      - ccia_internal
+      - ccia_public
+
+  # =========================================================================
+  # Nginx Reverse Proxy & Static PWA Web Server (HTTPS / WebSockets)
+  # =========================================================================
+  web:
+    image: nginx:alpine
+    container_name: ccia_web
+    restart: unless-stopped
+    depends_on:
+      - powersync
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../apps/web/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - ccia_internal
+      - ccia_public
+
+  # =========================================================================
+  # Automated Daily Encrypted Backup Service
+  # =========================================================================
+  backup:
+    image: alpine:latest
+    container_name: ccia_backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-ccia_accounting}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ChangeMeSecurePassword2026!}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-GhanaChurchAccraSecurePassphrase2026}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./backups:/backups
+      - ./backup-cron.sh:/scripts/backup-cron.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache postgresql15-client openssl bash coreutils tzdata
+        chmod +x /scripts/backup-cron.sh
+        # Run daily at 02:00 AM UTC (Accra Time is GMT/UTC year-round)
+        echo "0 2 * * * /scripts/backup-cron.sh >> /var/log/backup.log 2>&1" > /etc/crontabs/root
+        crond -f -l 2
+    networks:
+      - ccia_internal
+
+networks:
+  ccia_internal:
+    internal: true
+  ccia_public:
+
+volumes:
+  postgres_data:

@@ -14,3 +14,4 @@ export * from './expenses/index.js';
 export * from './reports/index.js';
 export * from './budgets/index.js';
 export * from './payroll/index.js';
+export * from './demo/index.js';

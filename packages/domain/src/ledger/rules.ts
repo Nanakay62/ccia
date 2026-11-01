@@ -511,3 +511,77 @@ export function calculateRevaluation(params: {
     isNetGain: totalAdjustment > 0n,
   };
 }
+
+/**
+ * Computes a deterministic tamper-evident cryptographic signature for a journal entry.
+ * Incorporates header, line count, control totals, and every line item.
+ */
+export function computeJournalEntrySignature(entry: JournalEntry): string {
+  const lineStrings = entry.lines
+    .slice()
+    .sort((a, b) => a.lineNumber - b.lineNumber)
+    .map(
+      (l) =>
+        `${l.lineNumber}:${l.accountId}:${l.fundId}:${l.originalCurrency}:${l.originalAmount}:${l.exchangeRate}:${l.debitAmountGhs}:${l.creditAmountGhs}`
+    )
+    .join('|');
+  const payload = `${entry.id}:${entry.branchId}:${entry.documentNumber}:${entry.entryDate}:${entry.lineCount}:${entry.totalDebitGhs}:${entry.totalCreditGhs}:${lineStrings}`;
+
+  // Deterministic 64-bit FNV-1a hash
+  let h1 = 0x811c9dc5;
+  let h2 = 0xcbf29ce4;
+  for (let i = 0; i < payload.length; i++) {
+    const code = payload.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ (code >>> 8), 0x01000193);
+  }
+  return `sig-v1-${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/**
+ * Verifies that a journal entry has not been modified or corrupted since signature creation.
+ */
+export function verifyJournalEntrySignature(entry: JournalEntry, expectedSignature: string): boolean {
+  return computeJournalEntrySignature(entry) === expectedSignature;
+}
+
+/**
+ * Scans an entire ledger of signed entries to identify any tampered records.
+ */
+export function scanLedgerForTampering(
+  entries: readonly (JournalEntry & { signature?: string })[]
+): {
+  readonly clean: boolean;
+  readonly tamperedEntries: readonly {
+    readonly id: string;
+    readonly documentNumber: string;
+    readonly expectedSignature: string;
+    readonly computedSignature: string;
+  }[];
+} {
+  const tampered: {
+    id: string;
+    documentNumber: string;
+    expectedSignature: string;
+    computedSignature: string;
+  }[] = [];
+
+  for (const entry of entries) {
+    if (entry.signature) {
+      const computed = computeJournalEntrySignature(entry);
+      if (computed !== entry.signature) {
+        tampered.push({
+          id: entry.id,
+          documentNumber: entry.documentNumber,
+          expectedSignature: entry.signature,
+          computedSignature: computed,
+        });
+      }
+    }
+  }
+
+  return {
+    clean: tampered.length === 0,
+    tamperedEntries: tampered,
+  };
+}

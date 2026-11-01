@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AuthProvider } from '../src/context/AuthContext.js';
+import { DemoProvider } from '../src/context/DemoContext.js';
 import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { GivingProvider } from '../src/context/GivingContext.js';
@@ -15,19 +16,21 @@ import { GivingDirectoryView } from '../src/components/giving/GivingDirectoryVie
 
 const AllProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <AuthProvider>
-    <SyncProvider>
-      <LedgerProvider>
-        <GivingProvider>
-          <ExpensesProvider>
-            <ReportsProvider>
-              <BudgetProvider>
-                <PayrollProvider>{children}</PayrollProvider>
-              </BudgetProvider>
-            </ReportsProvider>
-          </ExpensesProvider>
-        </GivingProvider>
-      </LedgerProvider>
-    </SyncProvider>
+    <DemoProvider>
+      <SyncProvider>
+        <LedgerProvider>
+          <GivingProvider>
+            <ExpensesProvider>
+              <ReportsProvider>
+                <BudgetProvider>
+                  <PayrollProvider>{children}</PayrollProvider>
+                </BudgetProvider>
+              </ReportsProvider>
+            </ExpensesProvider>
+          </GivingProvider>
+        </LedgerProvider>
+      </SyncProvider>
+    </DemoProvider>
   </AuthProvider>
 );
 
