@@ -75,32 +75,40 @@ export const ChurchLetterhead: React.FC<ChurchLetterheadProps> = ({
               {churchName}
             </h1>
             <p className="text-[13px] font-semibold text-[var(--text-secondary)] print:text-slate-800">
-              {branchName}
+              {branchName} {isDemoMode && <span className="font-normal text-xs text-amber-700 dark:text-amber-400 ml-1.5">(Sample Letterhead)</span>}
             </p>
-            <p className="text-[11px] text-[var(--text-muted)] print:text-slate-600">
-              {address}
-            </p>
-            <p className="text-[11px] text-[var(--text-muted)] print:text-slate-600">
-              Tel: {defaultChurchSettings.phone} • Email: {defaultChurchSettings.email}
-            </p>
-            <p className="text-[10.5px] font-medium text-[var(--text-secondary)] tracking-wide pt-0.5 print:text-slate-800">
-              {defaultChurchSettings.taxRegNumber}
-            </p>
+            {address && (
+              <p className="text-[11px] text-[var(--text-muted)] print:text-slate-600">
+                {isDemoMode ? 'Sample Physical Address · Demo Mode' : address}
+              </p>
+            )}
+            {(defaultChurchSettings.phone || defaultChurchSettings.email) && (
+              <p className="text-[11px] text-[var(--text-muted)] print:text-slate-600">
+                {isDemoMode
+                  ? 'Sample Phone & Email · Demo Mode'
+                  : [defaultChurchSettings.phone ? `Tel: ${defaultChurchSettings.phone}` : '', defaultChurchSettings.email ? `Email: ${defaultChurchSettings.email}` : ''].filter(Boolean).join(' • ')}
+              </p>
+            )}
+            {defaultChurchSettings.taxRegNumber && (
+              <p className="text-[10.5px] font-medium text-[var(--text-secondary)] tracking-wide pt-0.5 print:text-slate-800">
+                {isDemoMode ? 'Sample TIN / Charity Registration' : defaultChurchSettings.taxRegNumber}
+              </p>
+            )}
           </div>
         </div>
 
         {/* Right: Official Document Title, Number, & Date Badge */}
         <div className="sm:text-right shrink-0 space-y-1">
-          <div className="inline-block px-3 py-1 rounded bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-xs font-bold uppercase tracking-wider text-[var(--text-primary)] print:border-black print:text-black print:bg-transparent">
+          <div className="inline-block px-3 py-1 rounded bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-xs font-semibold text-[var(--text-primary)] print:border-black print:text-black print:bg-transparent">
             {documentTitle}
           </div>
 
           {documentNumber && (
-            <div className="text-xs text-[var(--text-secondary)] font-mono print:text-slate-900">
+            <div className="text-xs text-[var(--text-secondary)] font-sans tabular-nums print:text-slate-900">
               <span className="font-sans text-[11px] text-[var(--text-muted)] mr-1">
                 {documentTitle.toLowerCase().includes('receipt') ? 'Receipt No:' : 'Doc No:'}
               </span>
-              <strong className="text-[var(--text-primary)] print:text-black font-bold">
+              <strong className="text-[var(--text-primary)] print:text-black font-semibold">
                 {documentNumber}
               </strong>
             </div>
@@ -147,7 +155,7 @@ export const ChurchLetterhead: React.FC<ChurchLetterheadProps> = ({
       {/* Demo Sandbox Alert if in Demo Mode */}
       {isDemoMode && (
         <div className="mt-1 py-0.5 px-2.5 rounded bg-black/5 text-[10.5px] font-semibold text-[var(--text-secondary)] flex items-center justify-between print:text-black">
-          <span>DEMO SANDBOX RECORD — CHRIST CHURCH OF GRACE, ADABRAKA</span>
+          <span>DEMO MODE — NOT AN OFFICIAL RECORD ({churchName.toUpperCase()})</span>
           <span className="font-mono text-[10px]">SAMPLE ONLY</span>
         </div>
       )}

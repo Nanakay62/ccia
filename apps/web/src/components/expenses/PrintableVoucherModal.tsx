@@ -15,6 +15,7 @@ import { Printer, X, Receipt } from 'lucide-react';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
 import { useModalEscape } from '../../utils/useModalEscape.js';
+import { formatDate } from '../../config/churchSettings.js';
 
 interface PrintableVoucherModalProps {
   voucher: PaymentVoucher | null;
@@ -75,7 +76,7 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
           <ChurchLetterhead
             documentTitle="Official Payment Voucher"
             documentNumber={voucher.voucherNumber}
-            documentDate={voucher.voucherDate}
+            documentDate={formatDate(voucher.voucherDate)}
             currency={voucher.currency === 'USD' ? 'USD' : 'GHS'}
           />
 
@@ -83,35 +84,35 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-[var(--radius)] bg-slate-50 border border-slate-200 text-xs">
             <div className="space-y-1.5">
               <div>
-                <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">Paid To (Payee):</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Paid To (Payee):</span>
                 <span className="text-sm font-bold text-slate-900">{voucher.payeeName}</span>
               </div>
               {voucher.requisitionNumber && (
                 <div>
-                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">Requisition Ref:</span>
-                  <span className="font-mono font-semibold text-slate-800">{voucher.requisitionNumber}</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Requisition Ref:</span>
+                  <span className="font-mono font-medium text-slate-800">{voucher.requisitionNumber}</span>
                 </div>
               )}
               <div>
-                <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">Fund Debited:</span>
-                <span className="font-semibold text-slate-800">{voucher.fundName}</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Fund Debited:</span>
+                <span className="font-medium text-slate-800">{voucher.fundName}</span>
               </div>
             </div>
 
             <div className="space-y-1.5 sm:text-right">
               <div>
-                <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">Expense Account:</span>
-                <span className="font-semibold text-slate-900">{voucher.expenseAccountName}</span>
-                <span className="text-[11px] text-slate-500 font-mono block">({voucher.expenseAccountId})</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Expense Account:</span>
+                <span className="font-medium text-slate-900">{voucher.expenseAccountName}</span>
+                <span className="text-xs text-slate-500 font-mono block">({voucher.expenseAccountId})</span>
               </div>
               <div>
-                <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">Disbursement Channel:</span>
-                <span className="font-semibold text-slate-800">{voucher.paymentMethod}</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Disbursement Channel:</span>
+                <span className="font-medium text-slate-800">{voucher.paymentMethod}</span>
                 {voucher.chequeNumber && (
-                  <span className="text-[11px] text-slate-600 block">Cheque #{voucher.chequeNumber}</span>
+                  <span className="text-xs text-slate-600 block">Cheque #{voucher.chequeNumber}</span>
                 )}
                 {voucher.momoReference && (
-                  <span className="text-[11px] text-slate-600 block">MoMo Ref: {voucher.momoReference}</span>
+                  <span className="text-xs text-slate-600 block">MoMo Ref: {voucher.momoReference}</span>
                 )}
               </div>
             </div>
@@ -119,10 +120,10 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
 
           {/* Purpose / Description */}
           <div className="p-3.5 rounded-[var(--radius)] border border-slate-200 bg-white">
-            <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
               Purpose & Particulars:
             </span>
-            <p className="text-slate-800 font-medium text-xs leading-relaxed">
+            <p className="text-slate-800 font-normal text-xs leading-relaxed">
               {voucher.purpose}
             </p>
           </div>
@@ -134,15 +135,15 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                   <th className="py-2.5 px-3 text-left">Description of Expenditure</th>
                   <th className="py-2.5 px-3 text-right">Gross Amount</th>
-                  <th className="py-2.5 px-3 text-right">WHT Deduction</th>
+                  <th className="py-2.5 px-3 text-right">Withholding tax (WHT)</th>
                   <th className="py-2.5 px-3 text-right">Net Payable</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
+              <tbody className="divide-y divide-slate-100 font-normal">
                 <tr>
                   <td className="py-3 px-3 text-slate-800">
                     <div>{voucher.purpose}</div>
-                    <div className="text-[11px] text-slate-500">{voucher.expenseAccountName}</div>
+                    <div className="text-xs text-slate-500">{voucher.expenseAccountName}</div>
                   </td>
                   <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-700">
                     GHS {grossGhs}
@@ -154,7 +155,7 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
                       'GHS 0.00 (Exempt)'
                     )}
                   </td>
-                  <td className="py-3 px-3 text-right font-mono font-bold tabular-nums text-slate-900 text-sm">
+                  <td className="py-3 px-3 text-right font-mono font-medium tabular-nums text-slate-900 text-sm">
                     GHS {netGhs}
                   </td>
                 </tr>
@@ -180,21 +181,21 @@ export const PrintableVoucherModal: React.FC<PrintableVoucherModalProps> = ({
               label: 'Prepared by (Finance Secretary)',
               name: voucher.preparedByName || 'Ebenezer Mensah',
               role: 'Finance Secretary',
-              date: voucher.voucherDate,
+              date: formatDate(voucher.voucherDate),
               signaturePlaceholder: '(Signed Digitally)',
             }}
             approvedBy={{
               label: 'Approved by (Treasurer / Pastor)',
               name: voucher.authorizedByName || 'Deaconess Akosua Darko',
               role: 'Church Treasurer',
-              date: voucher.voucherDate,
+              date: formatDate(voucher.voucherDate),
               signaturePlaceholder: '(Authorized)',
             }}
             thirdSigner={{
               label: 'Received by (Payee Acknowledgement)',
               name: voucher.payeeName,
               role: 'Payee / Authorized Representative',
-              date: voucher.voucherDate,
+              date: formatDate(voucher.voucherDate),
             }}
             showStampBox={true}
             notes="Voucher must be supported by official VAT receipts, invoices, or delivery notes before reimbursement."

@@ -34,6 +34,7 @@ import {
 import { useLedger } from './LedgerContext.js';
 import { useGiving } from './GivingContext.js';
 import { useAuth } from './AuthContext.js';
+import { useSync } from './SyncContext.js';
 import { exportReportToPdf } from '../utils/exports/pdf.js';
 import { exportReportToExcel } from '../utils/exports/excel.js';
 import { exportReportToWord } from '../utils/exports/word.js';
@@ -50,7 +51,32 @@ export type ReportType =
   | 'TRIAL_BALANCE'
   | 'BANK_RECONCILIATION'
   | 'AUDIT_LOG'
-  | 'USD_SUMMARY';
+  | 'SOD_EXCEPTIONS'
+  | 'USD_SUMMARY'
+  | 'ISSUED_REPORTS';
+
+export interface ReportSignoff {
+  name: string;
+  role: string;
+  date: string;
+  timestamp: string;
+}
+
+export interface IssuedReportSnapshot {
+  id: string;
+  reportType: ReportType;
+  title: string;
+  periodText: string;
+  documentNumber: string;
+  currency: 'GHS' | 'USD';
+  preparedBy: ReportSignoff;
+  certifiedBy: ReportSignoff;
+  approvedBy: ReportSignoff;
+  issuedAt: string;
+  totalIncomeGhs?: string;
+  totalExpenseGhs?: string;
+  netSurplusGhs?: string;
+}
 
 export interface ReportsContextValue {
   readonly activeReport: ReportType;
@@ -67,6 +93,16 @@ export interface ReportsContextValue {
   readonly setUsdRateBasis: (basis: 'CLOSING_RATE' | 'PERIOD_AVERAGE') => void;
   readonly selectedFundId: string;
   readonly setSelectedFundId: (id: string) => void;
+
+  // Report status and sign-off workflow (Section 4.3)
+  readonly reportStatus: 'DRAFT' | 'CERTIFIED' | 'APPROVED';
+  readonly preparedBy: ReportSignoff;
+  readonly certifiedBy: ReportSignoff | null;
+  readonly approvedBy: ReportSignoff | null;
+  readonly issuedReports: readonly IssuedReportSnapshot[];
+  readonly certifyReport: () => void;
+  readonly approveReport: () => void;
+  readonly logReportAudit: (action: string, details?: string) => void;
 
   // 11 Financial & Operational Reports
   readonly incomeExpenditure: IncomeExpenditureReport;
@@ -94,6 +130,7 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const { accounts, funds, entries, trialBalance } = useLedger();
   const { members, pledges, givingRecords, countingSheets } = useGiving();
   const { currentUser } = useAuth();
+  const { enqueueItem } = useSync();
 
   const [activeReport, setActiveReport] = useState<ReportType>('INCOME_EXPENDITURE');
   const [periodStart, setPeriodStart] = useState('2026-10-01');
@@ -103,11 +140,59 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [usdExchangeRate, setUsdExchangeRate] = useState('15.5000');
   const [usdRateBasis, setUsdRateBasis] = useState<'CLOSING_RATE' | 'PERIOD_AVERAGE'>('CLOSING_RATE');
 
+  // Status & sign-off workflow (Section 4.3)
+  const [reportStatus, setReportStatus] = useState<'DRAFT' | 'CERTIFIED' | 'APPROVED'>('DRAFT');
+  const [preparedBy] = useState<ReportSignoff>({
+    name: 'Akosua Osei',
+    role: 'Finance Secretary',
+    date: '02 Nov 2026',
+    timestamp: '2026-11-02T10:00:00Z',
+  });
+  const [certifiedBy, setCertifiedBy] = useState<ReportSignoff | null>(null);
+  const [approvedBy, setApprovedBy] = useState<ReportSignoff | null>(null);
+
+  const [issuedReports, setIssuedReports] = useState<IssuedReportSnapshot[]>([
+    {
+      id: 'iss-rep-2026-q3',
+      reportType: 'INCOME_EXPENDITURE',
+      title: 'Statement of Income and Expenditure',
+      periodText: '01 Jul 2026 to 30 Sep 2026',
+      documentNumber: 'REP-INC-20260930',
+      currency: 'GHS',
+      preparedBy: {
+        name: 'Akosua Osei',
+        role: 'Finance Secretary',
+        date: '05 Oct 2026',
+        timestamp: '2026-10-05T09:00:00Z',
+      },
+      certifiedBy: {
+        name: 'Kofi Mensah',
+        role: 'Treasurer',
+        date: '06 Oct 2026',
+        timestamp: '2026-10-06T14:00:00Z',
+      },
+      approvedBy: {
+        name: 'Rev. Emmanuel Addo',
+        role: 'Senior Pastor / Elder',
+        date: '08 Oct 2026',
+        timestamp: '2026-10-08T16:30:00Z',
+      },
+      issuedAt: '08 Oct 2026',
+      totalIncomeGhs: '42,300.00',
+      totalExpenseGhs: '18,450.00',
+      netSurplusGhs: '23,850.00',
+    },
+  ]);
+
   const asOfDate = periodEnd;
 
   const setDateRange = useCallback((start: string, end: string) => {
     setPeriodStart(start);
     setPeriodEnd(end);
+    // Reset status to draft on new period
+    setReportStatus('DRAFT');
+    setCertifiedBy(null);
+    setApprovedBy(null);
   }, []);
 
   // Filter entries if a specific fund is selected (or ALL)
@@ -287,8 +372,84 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [asOfDate, periodStart, periodEnd, usdExchangeRate, usdRateBasis, incomeExpenditure, balanceSheet]);
 
+  // Audit logging helper
+  const logReportAudit = useCallback(
+    (action: string, details?: string) => {
+      enqueueItem({
+        entityType: 'FINANCIAL_REPORT',
+        entityId: activeReport,
+        action: 'POST_JOURNAL_ENTRY',
+        deviceId: 'dev-01',
+        payload: {
+          action,
+          performedBy: currentUser.id,
+          details: details || `Report action: ${action}`,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    },
+    [activeReport, currentUser.id, enqueueItem]
+  );
+
+  // Signing workflow handlers (Section 4.3)
+  const certifyReport = useCallback(() => {
+    const signoff: ReportSignoff = {
+      name: 'Kofi Mensah',
+      role: 'Treasurer',
+      date: '02 Nov 2026',
+      timestamp: new Date().toISOString(),
+    };
+    setCertifiedBy(signoff);
+    setReportStatus('CERTIFIED');
+    logReportAudit('REPORT_CERTIFIED', `${activeReport} statement certified by Kofi Mensah (Treasurer)`);
+  }, [activeReport, logReportAudit]);
+
+  const approveReport = useCallback(() => {
+    const signoff: ReportSignoff = {
+      name: 'Rev. Emmanuel Addo',
+      role: 'Senior Pastor / Elder',
+      date: '02 Nov 2026',
+      timestamp: new Date().toISOString(),
+    };
+    setApprovedBy(signoff);
+    setReportStatus('APPROVED');
+    logReportAudit('REPORT_APPROVED', `${activeReport} statement approved by Rev. Emmanuel Addo (Senior Pastor / Elder)`);
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formatD = (str: string) => {
+      const parts = str.split('-').map(Number);
+      if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+        return `${String(parts[2]).padStart(2, '0')} ${months[parts[1] - 1]} ${parts[0]}`;
+      }
+      return str;
+    };
+
+    const newSnapshot: IssuedReportSnapshot = {
+      id: `iss-rep-${Date.now()}`,
+      reportType: activeReport,
+      title: activeReport === 'INCOME_EXPENDITURE' ? 'Statement of Income and Expenditure' : activeReport.replace(/_/g, ' '),
+      periodText: `${formatD(periodStart)} to ${formatD(periodEnd)}`,
+      documentNumber: `REP-${activeReport.slice(0, 3)}-${periodEnd.replace(/-/g, '')}`,
+      currency: currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS',
+      preparedBy,
+      certifiedBy: certifiedBy || {
+        name: 'Kofi Mensah',
+        role: 'Treasurer',
+        date: '02 Nov 2026',
+        timestamp: new Date().toISOString(),
+      },
+      approvedBy: signoff,
+      issuedAt: '02 Nov 2026',
+      totalIncomeGhs: (Number(incomeExpenditure.totalIncomePesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      totalExpenseGhs: (Number(incomeExpenditure.totalExpensePesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      netSurplusGhs: (Number(incomeExpenditure.netSurplusDeficitPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    };
+    setIssuedReports((prev) => [newSnapshot, ...prev]);
+  }, [activeReport, periodStart, periodEnd, currencyMode, preparedBy, certifiedBy, incomeExpenditure, logReportAudit]);
+
   // Offline Export Handlers
   const exportCurrentPdf = useCallback(async () => {
+    logReportAudit('EXPORT_PDF', `Exported ${activeReport} statement to PDF`);
     const isUsd = currencyMode === 'USD_SUMMARY';
 
     if (activeReport === 'INCOME_EXPENDITURE' || activeReport === 'USD_SUMMARY') {
@@ -431,6 +592,7 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ]);
 
   const exportCurrentExcel = useCallback(async () => {
+    logReportAudit('EXPORT_EXCEL', `Exported ${activeReport} statement to Excel`);
     const isUsd = currencyMode === 'USD_SUMMARY';
 
     if (activeReport === 'INCOME_EXPENDITURE' || activeReport === 'USD_SUMMARY') {
@@ -570,6 +732,7 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ]);
 
   const exportCurrentCsv = useCallback(() => {
+    logReportAudit('EXPORT_CSV', `Exported ${activeReport} statement to CSV`);
     const isUsd = currencyMode === 'USD_SUMMARY';
     const filename = `${activeReport.toLowerCase()}-${periodStart}-${periodEnd}.csv`;
 
@@ -633,6 +796,7 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [activeReport, currencyMode, periodStart, periodEnd, incomeExpenditure, balanceSheet, trialBalance]);
 
   const exportCurrentWord = useCallback(() => {
+    logReportAudit('EXPORT_WORD', `Exported ${activeReport} statement to Microsoft Word`);
     const isUsd = currencyMode === 'USD_SUMMARY';
     const isDemo = typeof window !== 'undefined' && localStorage.getItem('church_demo_mode') === 'true';
 
@@ -821,6 +985,14 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
       bankReconciliation,
       auditLogReport,
       denominationUsdSummary,
+      reportStatus,
+      preparedBy,
+      certifiedBy,
+      approvedBy,
+      issuedReports,
+      certifyReport,
+      approveReport,
+      logReportAudit,
       exportCurrentPdf,
       exportCurrentExcel,
       exportCurrentWord,
@@ -847,6 +1019,14 @@ export const ReportsProvider: React.FC<{ children: React.ReactNode }> = ({ child
       bankReconciliation,
       auditLogReport,
       denominationUsdSummary,
+      reportStatus,
+      preparedBy,
+      certifiedBy,
+      approvedBy,
+      issuedReports,
+      certifyReport,
+      approveReport,
+      logReportAudit,
       exportCurrentPdf,
       exportCurrentExcel,
       exportCurrentWord,

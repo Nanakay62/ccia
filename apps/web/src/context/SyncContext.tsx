@@ -14,8 +14,12 @@ import { PowerSyncUploadConnector, type RpcCaller } from '../services/powersync-
 import { useAuth } from './AuthContext.js';
 import { useDemo } from './DemoContext.js';
 import { INITIAL_ACCOUNTS, INITIAL_FUNDS, INITIAL_PERIODS, INITIAL_EXCHANGE_RATES } from './LedgerContext.js';
+import { loadFromStore, saveToStore } from '../utils/database.js';
+import { isSupabaseConfigured, executeSupabaseRpc } from '@church/db';
 
 interface SyncContextType extends SyncStatusState {
+  isCloudConnected: boolean;
+  isSupabaseReady: boolean;
   toggleOnlineStatus: () => void;
   triggerSync: () => Promise<void>;
   enqueueItem: (item: Omit<SyncQueueItem, 'id' | 'createdAt' | 'attempts' | 'status'>) => void;
@@ -34,6 +38,26 @@ interface SyncContextType extends SyncStatusState {
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
+
+/**
+ * Deep-converts BigInt values to string to prevent JSON.stringify TypeError crashes in sync queue.
+ */
+function sanitizePayloadForSync(val: unknown): unknown {
+  if (typeof val === 'bigint') {
+    return val.toString();
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizePayloadForSync);
+  }
+  if (typeof val === 'object' && val !== null) {
+    const res: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val)) {
+      res[k] = sanitizePayloadForSync(v);
+    }
+    return res;
+  }
+  return val;
+}
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
@@ -115,8 +139,10 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isDemoMode) {
       return;
     }
+    const safePayload = (sanitizePayloadForSync(item.payload) as Record<string, unknown>) ?? {};
     const newItem: SyncQueueItem = {
       ...item,
+      payload: safePayload,
       id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       createdAt: new Date().toISOString(),
       attempts: 0,
@@ -220,6 +246,25 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     []
   );
 
+  // Active RPC caller: routes to real Supabase RPC when configured and online,
+  // falling back to local business rule simulation when offline or in demo mode.
+  const activeRpcCaller: RpcCaller = useCallback(
+    async (rpcName, params) => {
+      if (isSupabaseConfigured() && !isDemoMode && isOnline) {
+        try {
+          const cloudRes = await executeSupabaseRpc(rpcName, params);
+          if (cloudRes.success || (cloudRes.error && cloudRes.error.code !== 'SUPABASE_NOT_CONFIGURED')) {
+            return cloudRes;
+          }
+        } catch (err) {
+          console.warn('[Sync] Cloud RPC failed, falling back to local simulation:', err);
+        }
+      }
+      return mockRpcCaller(rpcName, params);
+    },
+    [isDemoMode, isOnline, mockRpcCaller]
+  );
+
   const triggerSync = useCallback(async () => {
     // Sync hard guard: the demo database must NEVER sync to remote servers or devices (Section 5.1)
     if (isDemoMode) {
@@ -232,7 +277,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsSyncing(true);
 
     try {
-      const connector = new PowerSyncUploadConnector(mockRpcCaller);
+      const connector = new PowerSyncUploadConnector(activeRpcCaller);
       const result = await connector.processUploadBatch(queue);
 
       setQueue(result.remainingQueue);
@@ -247,7 +292,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsSyncing(false);
     }
-  }, [isDemoMode, isOnline, queue, mockRpcCaller]);
+  }, [isDemoMode, isOnline, queue, activeRpcCaller]);
 
   const dismissRejection = useCallback((id: string, resolutionNote?: string) => {
     setRejections((prev) =>
@@ -291,19 +336,25 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setConflicts((prev) => prev.filter((c) => c.recordId !== recordId));
   }, []);
 
-  // Export encrypted backup to a downloaded file (.chbak)
+  // Export encrypted backup to a downloaded file (.chbak) with full ledger transactions
   const exportEncryptedBackup = useCallback(
     async (passphrase: string): Promise<Blob> => {
+      const currentEntries = loadFromStore('entries', isDemoMode, []);
+      const currentAccounts = loadFromStore('accounts', isDemoMode, INITIAL_ACCOUNTS);
+      const currentFunds = loadFromStore('funds', isDemoMode, INITIAL_FUNDS);
+      const currentPeriods = loadFromStore('periods', isDemoMode, INITIAL_PERIODS);
+      const currentRates = loadFromStore('exchange_rates', isDemoMode, INITIAL_EXCHANGE_RATES);
+
       const bundle = await createEncryptedBackup({
         branchId: currentUser.branchId,
         branchName: currentUser.branchName,
         exportedBy: currentUser.fullName,
         passphrase,
-        accounts: INITIAL_ACCOUNTS,
-        funds: INITIAL_FUNDS,
-        periods: INITIAL_PERIODS,
-        exchangeRates: INITIAL_EXCHANGE_RATES,
-        entries: [],
+        accounts: currentAccounts,
+        funds: currentFunds,
+        periods: currentPeriods,
+        exchangeRates: currentRates,
+        entries: currentEntries,
       });
 
       const blob = new Blob([JSON.stringify(bundle, null, 2)], {
@@ -311,15 +362,23 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       return blob;
     },
-    [currentUser]
+    [currentUser, isDemoMode]
   );
 
-  // Restore encrypted backup with immediate Trial Balance Doctor check
+  // Restore encrypted backup with immediate Trial Balance Doctor check & database persistence
   const restoreFromEncryptedBackup = useCallback(
     async (fileContent: string, passphrase: string) => {
       try {
         const bundle: EncryptedBackupBundle = JSON.parse(fileContent);
         const res = await restoreEncryptedBackup(bundle, passphrase);
+
+        if (res.success && res.data) {
+          saveToStore('entries', isDemoMode, res.data.entries);
+          saveToStore('accounts', isDemoMode, res.data.accounts);
+          saveToStore('funds', isDemoMode, res.data.funds);
+          saveToStore('periods', isDemoMode, res.data.periods);
+          saveToStore('exchange_rates', isDemoMode, res.data.exchangeRates);
+        }
 
         return {
           success: res.success,
@@ -334,7 +393,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
     },
-    []
+    [isDemoMode]
   );
 
   // Multi-Device Offline Simulation Runner
@@ -484,6 +543,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         isOnline,
         isSyncing,
+        isCloudConnected: isSupabaseConfigured() && isOnline && !isDemoMode,
+        isSupabaseReady: isSupabaseConfigured(),
         pendingUploadCount: queue.length,
         needsAttentionCount: activeRejections.length,
         conflictsCount: conflicts.length,

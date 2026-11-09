@@ -18,6 +18,8 @@ import { DualSignatureBlock } from '../src/components/common/DualSignatureBlock.
 import { PrintableVoucherModal } from '../src/components/expenses/PrintableVoucherModal.js';
 import { PrintableCountingSheetModal } from '../src/components/giving/PrintableCountingSheetModal.js';
 import { exportReportToWord } from '../src/utils/exports/word.js';
+import { generateCsv } from '../src/utils/exports/csv.js';
+import { exportReportToExcel } from '../src/utils/exports/excel.js';
 import type { PaymentVoucher, CountingSheet } from '@church/domain';
 
 const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -40,7 +42,7 @@ describe('Phase 5: Print Layouts and Official Letterhead', () => {
       </TestWrapper>
     );
 
-    expect(screen.getByText(/Accra Central Grace Chapel/i)).toBeDefined();
+    expect(screen.getByText(/Calvary Crystal Church/i)).toBeDefined();
     expect(screen.getByText(/TIN: C0004928172/i)).toBeDefined();
     expect(screen.getByText(/Official Audit Statement/i)).toBeDefined();
     expect(screen.getByText(/DOC-2026-TEST/i)).toBeDefined();
@@ -225,6 +227,104 @@ describe('Phase 5: Print Layouts and Official Letterhead', () => {
 
     expect(capturedBlob).not.toBeNull();
     expect(capturedBlob?.type).toContain('application/msword');
+
+    URL.createObjectURL = originalCreateObjectURL;
+  });
+
+  it('prevents CSV Formula Injection (CWE-1236) by prefixing dangerous characters', () => {
+    const headers = ['Member Name', 'Pledge Amount', 'Formula Note'];
+    const rows = [
+      ['=cmd|\' /C calc\'!A0', 100, '+SUM(A1:A10)'],
+      ['-250.00', 50, '@lookup'],
+      ['\tTabPrefixed', 20, '\rCarriageReturn'],
+      ['Safe User', 500, 'Regular text'],
+    ];
+
+    const csvContent = generateCsv(headers, rows);
+
+    // Verify leading formula tokens are sanitized with single quote prefix
+    expect(csvContent).toContain("'=cmd|' /C calc'!A0");
+    expect(csvContent).toContain("'+SUM(A1:A10)");
+    expect(csvContent).toContain("'-250.00");
+    expect(csvContent).toContain("'@lookup");
+    expect(csvContent).toContain("Safe User");
+  });
+
+  it('escapes HTML tags in Word exports to prevent Stored XSS / markup injection', () => {
+    let capturedContent = '';
+    const originalBlob = globalThis.Blob;
+    globalThis.Blob = class MockBlob extends originalBlob {
+      constructor(parts: any[], options?: any) {
+        super(parts, options);
+        capturedContent = parts.join('');
+      }
+    };
+
+    const originalCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+    URL.revokeObjectURL = vi.fn();
+
+    try {
+      exportReportToWord({
+        title: '<script>alert("xss")</script> Financial Report',
+        periodText: 'Q1 2026',
+        currency: 'GHS',
+        columns: [
+          { header: 'Account', key: 'name' },
+          { header: 'Amount', key: 'amount', isCurrency: true },
+        ],
+        data: [
+          { name: '<img src=x onerror=alert(1)> Tithes', amount: 1200 },
+        ],
+        notes: '<b onmouseover="stealCookie()">Important Note</b>',
+        preparedByName: '<b>Alice</b>',
+        preparedByRole: 'Accountant',
+        approvedByName: 'Bob',
+        approvedByRole: 'Pastor',
+        filename: 'xss-test.doc',
+      });
+
+      // Verify unescaped raw HTML is absent and properly entity-encoded
+      expect(capturedContent).not.toContain('<script>');
+      expect(capturedContent).toContain('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+      expect(capturedContent).not.toContain('<img src=x onerror');
+      expect(capturedContent).toContain('&lt;img src=x onerror=alert(1)&gt;');
+      expect(capturedContent).toContain('&lt;b onmouseover=&quot;stealCookie()&quot;&gt;');
+      expect(capturedContent).toContain('&lt;b&gt;Alice&lt;/b&gt;');
+    } finally {
+      globalThis.Blob = originalBlob;
+      URL.createObjectURL = originalCreateObjectURL;
+    }
+  });
+
+  it('handles large datasets in Excel export without RangeError stack overflow', async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+    URL.revokeObjectURL = vi.fn();
+
+    // Construct 5,000 row dataset (which previously caused stack overflow with Math.max(...data.map))
+    const largeData = Array.from({ length: 5000 }, (_, i) => ({
+      code: `AC-${i}`,
+      name: `Account Description ${i} with moderate length title`,
+      debit: i * 10,
+      credit: 0,
+    }));
+
+    await expect(
+      exportReportToExcel({
+        filename: 'large-data.xlsx',
+        reportTitle: 'Stress Test Ledger Export',
+        periodText: '2026',
+        currency: 'GHS',
+        columns: [
+          { header: 'Code', key: 'code' },
+          { header: 'Account Name', key: 'name' },
+          { header: 'Debit', key: 'debit', isCurrency: true },
+          { header: 'Credit', key: 'credit', isCurrency: true },
+        ],
+        data: largeData,
+      })
+    ).resolves.not.toThrow();
 
     URL.createObjectURL = originalCreateObjectURL;
   });

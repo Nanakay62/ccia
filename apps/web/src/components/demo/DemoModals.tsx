@@ -3,6 +3,7 @@ import { useDemo } from '../../context/DemoContext.js';
 import { Button } from '../ui/Button.js';
 import { RotateCcw, LogOut } from 'lucide-react';
 import { useModalEscape } from '../../utils/useModalEscape.js';
+import { defaultChurchSettings } from '../../config/churchSettings.js';
 
 export const DemoModals: React.FC = () => {
   const {
@@ -76,7 +77,7 @@ export const DemoModals: React.FC = () => {
             </div>
 
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-              This will erase all changes made in the demo sandbox and restore the default training state for Christ Church of Grace: 300 Ghanaian church members, 6 months of balanced transactions, and the original open action items.
+              This will erase all changes made in the demo sandbox and restore the default training state for {defaultChurchSettings.churchName}: 300 Ghanaian church members, 6 months of balanced transactions, and the original open action items.
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-2">

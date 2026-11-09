@@ -67,7 +67,7 @@ describe('Phase 4: Demo Mode Specification Verification (Section 5)', () => {
 
     // Walkthrough Card Headline & Explanation
     expect(screen.getByText(/Demo mode: training sandbox/i)).toBeDefined();
-    expect(screen.getByText(/Christ Church of Grace, Adabraka/i)).toBeDefined();
+    expect(screen.getAllByText(/Calvary Crystal Church/i).length).toBeGreaterThan(0);
 
     // 3 Guided Tasks
     expect(screen.getByText(/1\. Post Sunday's giving/i)).toBeDefined();

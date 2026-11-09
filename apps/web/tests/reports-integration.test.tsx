@@ -12,6 +12,8 @@ import { ReportsProvider } from '../src/context/ReportsContext.js';
 import { ReportsView } from '../src/components/reports/ReportsView.js';
 import { DashboardOverview } from '../src/components/dashboard/DashboardOverview.js';
 
+import { ToastProvider } from '../src/context/ToastContext.js';
+
 // Mock window.URL.createObjectURL and HTMLAnchorElement.prototype.click
 beforeEach(() => {
   window.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
@@ -26,7 +28,9 @@ const TestAppProviders: React.FC<{ children: React.ReactNode }> = ({ children })
         <LedgerProvider>
           <GivingProvider>
             <ExpensesProvider>
-              <ReportsProvider>{children}</ReportsProvider>
+              <ReportsProvider>
+                <ToastProvider>{children}</ToastProvider>
+              </ReportsProvider>
             </ExpensesProvider>
           </GivingProvider>
         </LedgerProvider>
@@ -43,12 +47,12 @@ describe('Phase 6: Financial Reports & Statements UI', () => {
       </TestAppProviders>
     );
 
-    expect(screen.getByText('Church Financial Statements & Reports')).toBeDefined();
+    expect(screen.getByText('Reports')).toBeDefined();
     expect(screen.getByText('Statement of Income and Expenditure')).toBeDefined();
-    expect(screen.getByText('Accra Central Grace Chapel')).toBeDefined();
-    expect(screen.getByText('Total Revenue Inflows')).toBeDefined();
-    expect(screen.getByText('Total Expenditures')).toBeDefined();
-    expect(screen.getByText('Net Operating Surplus / (Deficit)')).toBeDefined();
+    expect(screen.getByText('Calvary Crystal Church')).toBeDefined();
+    expect(screen.getByText('Total income')).toBeDefined();
+    expect(screen.getByText('Total expenditure')).toBeDefined();
+    expect(screen.getByText(/Net operating surplus/i)).toBeDefined();
   });
 
   it('navigates to Balance Sheet and shows Assets and Fund Balances', () => {
@@ -63,7 +67,7 @@ describe('Phase 6: Financial Reports & Statements UI', () => {
 
     expect(screen.getByText(/Statement of Financial Position \(Balance Sheet\)/i)).toBeDefined();
     expect(screen.getByText('Total Assets')).toBeDefined();
-    expect(screen.getByText('Total Liabilities & Fund Balances')).toBeDefined();
+    expect(screen.getAllByText(/Total Liabilities & Fund Balances/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Current & Fixed Assets/i)).toBeDefined();
   });
 
@@ -127,9 +131,13 @@ describe('Phase 6: Financial Reports & Statements UI', () => {
       </TestAppProviders>
     );
 
+    // Open unified export dropdown menu
+    const exportMenuBtn = screen.getByRole('button', { name: /Export/i });
+    fireEvent.click(exportMenuBtn);
+
     const pdfBtn = screen.getByRole('button', { name: /Export PDF/i });
     const excelBtn = screen.getByRole('button', { name: /Export Excel/i });
-    const csvBtn = screen.getByRole('button', { name: 'CSV' });
+    const csvBtn = screen.getByRole('button', { name: /CSV/i });
 
     // Click CSV
     fireEvent.click(csvBtn);
@@ -144,6 +152,28 @@ describe('Phase 6: Financial Reports & Statements UI', () => {
     await waitFor(() => {
       expect(window.URL.createObjectURL).toHaveBeenCalled();
     });
+  });
+
+  it('handles separation of duties sign-off workflow (DRAFT -> CERTIFIED -> APPROVED)', () => {
+    render(
+      <TestAppProviders>
+        <ReportsView />
+      </TestAppProviders>
+    );
+
+    // Initial state is DRAFT
+    expect(screen.getByText(/DRAFT, not yet certified/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /Certify statement/i })).toBeDefined();
+
+    // Certify as Treasurer
+    fireEvent.click(screen.getByRole('button', { name: /Certify statement/i }));
+    expect(screen.getByText(/CERTIFIED by Kofi Mensah \(Treasurer\)/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /Approve statement/i })).toBeDefined();
+
+    // Approve as Senior Pastor
+    fireEvent.click(screen.getByRole('button', { name: /Approve statement/i }));
+    expect(screen.getByText(/APPROVED by Rev\. Emmanuel Addo \(Senior Pastor/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /View in Issued reports/i })).toBeDefined();
   });
 });
 

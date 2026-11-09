@@ -30,8 +30,8 @@ export function generateIncomeExpenditureStatement(
   input: GenerateFinancialsInput
 ): IncomeExpenditureReport {
   const {
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = 'Calvary Crystal Church',
+    branchName = 'Main Branch',
     periodStart,
     periodEnd,
     entries,
@@ -145,8 +145,8 @@ export function generateBalanceSheet(
   input: GenerateBalanceSheetInput
 ): BalanceSheetReport {
   const {
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = 'Calvary Crystal Church',
+    branchName = 'Main Branch',
     asOfDate,
     entries,
     accounts,
@@ -405,10 +405,10 @@ export function generateCashFlowSummary(
     (e) => e.entryDate >= periodStart && e.entryDate <= periodEnd
   );
 
-  const operatingInflows: ReportLineItem[] = [];
-  const operatingOutflows: ReportLineItem[] = [];
-  const investingOutflows: ReportLineItem[] = [];
-  const financingInflows: ReportLineItem[] = [];
+  const operatingInflowsMap = new Map<string, { code: string; name: string; amount: bigint }>();
+  const operatingOutflowsMap = new Map<string, { code: string; name: string; amount: bigint }>();
+  const investingOutflowsMap = new Map<string, { code: string; name: string; amount: bigint }>();
+  const financingInflowsMap = new Map<string, { code: string; name: string; amount: bigint }>();
 
   let totalOperatingInflowsPesewas = 0n;
   let totalOperatingOutflowsPesewas = 0n;
@@ -430,41 +430,49 @@ export function generateCashFlowSummary(
 
       if (acct.type === 'Income') {
         const amt = line.creditAmountGhs - line.debitAmountGhs;
-        operatingInflows.push({
-          accountCode: acct.code,
-          accountName: acct.name,
-          amountPesewas: amt,
-        });
+        const cur = operatingInflowsMap.get(acct.code) || { code: acct.code, name: acct.name, amount: 0n };
+        cur.amount += amt;
+        operatingInflowsMap.set(acct.code, cur);
         totalOperatingInflowsPesewas += amt;
       } else if (acct.type === 'Expense') {
         const amt = line.debitAmountGhs - line.creditAmountGhs;
-        operatingOutflows.push({
-          accountCode: acct.code,
-          accountName: acct.name,
-          amountPesewas: amt,
-        });
+        const cur = operatingOutflowsMap.get(acct.code) || { code: acct.code, name: acct.name, amount: 0n };
+        cur.amount += amt;
+        operatingOutflowsMap.set(acct.code, cur);
         totalOperatingOutflowsPesewas += amt;
       } else if (acct.code.startsWith('15')) {
         // Fixed asset purchase (Investing)
         const amt = line.debitAmountGhs - line.creditAmountGhs;
-        investingOutflows.push({
-          accountCode: acct.code,
-          accountName: acct.name,
-          amountPesewas: amt,
-        });
+        const cur = investingOutflowsMap.get(acct.code) || { code: acct.code, name: acct.name, amount: 0n };
+        cur.amount += amt;
+        investingOutflowsMap.set(acct.code, cur);
         netCashFromInvestingPesewas -= amt;
       } else if (acct.type === 'Equity' || acct.code === '3010') {
         // Capital / Financing
         const amt = line.creditAmountGhs - line.debitAmountGhs;
-        financingInflows.push({
-          accountCode: acct.code,
-          accountName: acct.name,
-          amountPesewas: amt,
-        });
+        const cur = financingInflowsMap.get(acct.code) || { code: acct.code, name: acct.name, amount: 0n };
+        cur.amount += amt;
+        financingInflowsMap.set(acct.code, cur);
         netCashFromFinancingPesewas += amt;
       }
     }
   }
+
+  const operatingInflows: ReportLineItem[] = Array.from(operatingInflowsMap.values())
+    .map((x) => ({ accountCode: x.code, accountName: x.name, amountPesewas: x.amount }))
+    .sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+
+  const operatingOutflows: ReportLineItem[] = Array.from(operatingOutflowsMap.values())
+    .map((x) => ({ accountCode: x.code, accountName: x.name, amountPesewas: x.amount }))
+    .sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+
+  const investingOutflows: ReportLineItem[] = Array.from(investingOutflowsMap.values())
+    .map((x) => ({ accountCode: x.code, accountName: x.name, amountPesewas: x.amount }))
+    .sort((a, b) => a.accountCode.localeCompare(b.accountCode));
+
+  const financingInflows: ReportLineItem[] = Array.from(financingInflowsMap.values())
+    .map((x) => ({ accountCode: x.code, accountName: x.name, amountPesewas: x.amount }))
+    .sort((a, b) => a.accountCode.localeCompare(b.accountCode));
 
   // Calculate opening and closing cash & bank
   let openingCashAndBankPesewas = 0n;

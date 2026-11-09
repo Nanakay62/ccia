@@ -19,6 +19,10 @@ Thumbs.db
 *.db-wal
 *.db-shm
 
+# Scratch & temporary screenshot scripts
+scratch/
+
+
 # IDE
 .idea/
 .vscode/

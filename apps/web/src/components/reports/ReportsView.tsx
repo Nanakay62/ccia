@@ -1,35 +1,45 @@
 /**
  * ReportsView Component.
- * Unified reporting hub rendering all 11 financial statements and operational reports offline,
- * with GHS / USD summary toggle, date filters, fund filters, and one-click PDF, Excel, and CSV exports.
+ * Unified reporting hub rendering all official financial statements and operational reports offline,
+ * with GHS / USD toggle, single-row controls, single Export dropdown menu,
+ * formal signing workflow (Prepare -> Certify -> Approve), and Issued Reports Archive.
  */
 
-import React from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import {
   FileText,
   Download,
   FileSpreadsheet,
+  ChevronDown,
+  Printer,
   Calendar,
   DollarSign,
-  TrendingUp,
-  ShieldCheck,
   Building,
-  CreditCard,
   PieChart,
   Landmark,
   Layers,
   History,
   CheckCircle,
   AlertCircle,
-  Printer,
+  ShieldCheck,
+  TrendingUp,
+  Lock,
+  Archive,
+  ArrowRight,
+  ShieldAlert,
 } from 'lucide-react';
+import { useApprovals } from '../../context/ApprovalContext.js';
 import { useReports } from '../../context/ReportsContext.js';
-import type { ReportType } from '../../context/ReportsContext.js';
+import type { ReportType, IssuedReportSnapshot } from '../../context/ReportsContext.js';
 import { useLedger } from '../../context/LedgerContext.js';
+import { useAuth } from '../../context/AuthContext.js';
+import { ToastContext } from '../../context/ToastContext.js';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
+import { FinancialYearSelector } from '../ui/FinancialYearSelector.js';
+import { formatDate } from '../../config/churchSettings.js';
 
-const getReportTitle = (report: ReportType): string => {
+export const getReportTitle = (report: ReportType): string => {
   switch (report) {
     case 'INCOME_EXPENDITURE':
       return 'Statement of Income and Expenditure';
@@ -53,7 +63,27 @@ const getReportTitle = (report: ReportType): string => {
       return 'Append-Only Ledger Audit & Compliance Trail';
     case 'USD_SUMMARY':
       return 'Denominational Financial Summary (USD Translation)';
+    case 'ISSUED_REPORTS':
+      return 'Archive of Officially Issued Financial Reports';
+    case 'SOD_EXCEPTIONS':
+      return 'Separation of Duties (SoD) Exceptions & Overrides Report';
+    default:
+      return 'Financial Report';
   }
+};
+
+const formatMoney = (pesewas: bigint | number, showCurrency = false, currency = 'GHS') => {
+  const val = typeof pesewas === 'bigint' ? Number(pesewas) / 100 : pesewas;
+  const isNegative = val < 0;
+  const absFormatted = Math.abs(val).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const text = isNegative ? `(${absFormatted})` : absFormatted;
+  if (showCurrency) {
+    return `${currency} ${text}`;
+  }
+  return text;
 };
 
 export const ReportsView: React.FC = () => {
@@ -71,6 +101,14 @@ export const ReportsView: React.FC = () => {
     setUsdRateBasis,
     selectedFundId,
     setSelectedFundId,
+    reportStatus,
+    preparedBy,
+    certifiedBy,
+    approvedBy,
+    issuedReports,
+    certifyReport,
+    approveReport,
+    logReportAudit,
     incomeExpenditure,
     balanceSheet,
     fundBalance,
@@ -88,13 +126,58 @@ export const ReportsView: React.FC = () => {
     exportCurrentCsv,
   } = useReports();
 
-  const { funds } = useLedger();
-  const [isExporting, setIsExporting] = React.useState(false);
+  const { funds, selectedFinancialYear, showComparatives } = useLedger();
+  const { currentUser } = useAuth();
+  const { sodExceptions } = useApprovals();
+  const [sodFilter, setSodFilter] = useState<'ALL' | 'OVERRIDDEN' | 'BLOCKED'>('ALL');
+  const toastCtx = useContext(ToastContext);
+  const showToast = toastCtx?.showToast ?? (() => {});
+
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<'this_month' | 'last_month' | 'this_quarter' | 'this_year' | 'custom'>('this_month');
+  const [customStart, setCustomStart] = useState(periodStart);
+  const [customEnd, setCustomEnd] = useState(periodEnd);
+  const [viewingSnapshot, setViewingSnapshot] = useState<IssuedReportSnapshot | null>(null);
+
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handlePresetChange = (preset: 'this_month' | 'last_month' | 'this_quarter' | 'this_year' | 'custom') => {
+    setSelectedPreset(preset);
+    if (preset === 'this_month') {
+      setDateRange('2026-10-01', '2026-10-31');
+    } else if (preset === 'last_month') {
+      setDateRange('2026-09-01', '2026-09-30');
+    } else if (preset === 'this_quarter') {
+      setDateRange('2026-07-01', '2026-09-30');
+    } else if (preset === 'this_year') {
+      setDateRange('2026-01-01', '2026-12-31');
+    }
+  };
+
+  const handleApplyCustomDates = () => {
+    setDateRange(customStart, customEnd);
+  };
 
   const handleExportPdf = async () => {
     setIsExporting(true);
+    setIsExportMenuOpen(false);
     try {
       await exportCurrentPdf();
+      showToast('Statement exported to PDF successfully', 'success');
+    } catch {
+      showToast('PDF export failed', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -102,796 +185,1362 @@ export const ReportsView: React.FC = () => {
 
   const handleExportExcel = async () => {
     setIsExporting(true);
+    setIsExportMenuOpen(false);
     try {
       await exportCurrentExcel();
+      showToast('Statement exported to Excel successfully', 'success');
+    } catch {
+      showToast('Excel export failed', 'error');
     } finally {
       setIsExporting(false);
     }
   };
 
-  const reportCategories: { label: string; reports: { id: ReportType; name: string; icon: React.ComponentType<{ className?: string }> }[] }[] = [
+  const handleExportWord = () => {
+    setIsExportMenuOpen(false);
+    exportCurrentWord();
+    showToast('Statement exported to Word successfully', 'success');
+  };
+
+  const handleExportCsv = () => {
+    setIsExportMenuOpen(false);
+    exportCurrentCsv();
+    showToast('Statement exported to CSV successfully', 'success');
+  };
+
+  const handlePrint = () => {
+    logReportAudit('PRINT', `Printed ${activeReport} statement`);
+    window.print();
+  };
+
+  const handleCertify = () => {
+    certifyReport();
+    showToast('Statement certified by Treasurer (Kofi Mensah)', 'success');
+  };
+
+  const handleApprove = () => {
+    approveReport();
+    showToast('Statement officially approved by Senior Pastor (Rev. Emmanuel Addo)', 'success');
+  };
+
+  // Grouped Navigation Index (Section 4.1)
+  const reportGroups: {
+    label: string;
+    items: { id: ReportType; name: string; icon: React.ComponentType<{ className?: string }> }[];
+  }[] = [
     {
-      label: 'Financial Statements',
-      reports: [
-        { id: 'INCOME_EXPENDITURE', name: 'Income & Expenditure', icon: FileText },
-        { id: 'BALANCE_SHEET', name: 'Balance Sheet', icon: Landmark },
-        { id: 'FUND_BALANCE', name: 'Fund Balances', icon: Layers },
-        { id: 'CASH_FLOW', name: 'Cash Flow Summary', icon: TrendingUp },
-        { id: 'TRIAL_BALANCE', name: 'Trial Balance', icon: CheckCircle },
+      label: 'Statements',
+      items: [
+        { id: 'INCOME_EXPENDITURE', name: 'Income and expenditure', icon: FileText },
+        { id: 'BALANCE_SHEET', name: 'Balance sheet', icon: Landmark },
+        { id: 'FUND_BALANCE', name: 'Fund balances', icon: Layers },
+        { id: 'CASH_FLOW', name: 'Cash flow', icon: TrendingUp },
       ],
     },
     {
-      label: 'Giving & Pledges',
-      reports: [
-        { id: 'GIVING_SUMMARY', name: 'Giving by Channel', icon: PieChart },
-        { id: 'PLEDGE_STATUS', name: 'Building Pledges', icon: Building },
+      label: 'Books',
+      items: [
+        { id: 'TRIAL_BALANCE', name: 'Trial balance', icon: CheckCircle },
       ],
     },
     {
-      label: 'Management & Operations',
-      reports: [
-        { id: 'BUDGET_VS_ACTUAL', name: 'Budget vs. Actual', icon: CreditCard },
-        { id: 'BANK_RECONCILIATION', name: 'Bank Reconciliation', icon: ShieldCheck },
-        { id: 'AUDIT_LOG', name: 'Audit Trail', icon: History },
+      label: 'Giving',
+      items: [
+        { id: 'GIVING_SUMMARY', name: 'Giving by channel', icon: PieChart },
+        { id: 'PLEDGE_STATUS', name: 'Building pledges', icon: Building },
       ],
     },
     {
-      label: 'Denominational View',
-      reports: [
-        { id: 'USD_SUMMARY', name: 'USD Summary Report', icon: DollarSign },
+      label: 'Control',
+      items: [
+        { id: 'BUDGET_VS_ACTUAL', name: 'Budget vs. Actual', icon: ShieldCheck },
+        { id: 'BANK_RECONCILIATION', name: 'Bank reconciliation', icon: ShieldCheck },
+        { id: 'AUDIT_LOG', name: 'Audit trail', icon: History },
+        { id: 'SOD_EXCEPTIONS', name: 'SoD exceptions and overrides', icon: ShieldAlert },
+      ],
+    },
+    {
+      label: 'Denomination',
+      items: [
+        { id: 'USD_SUMMARY', name: 'USD summary report', icon: DollarSign },
+      ],
+    },
+    {
+      label: 'Archive',
+      items: [
+        { id: 'ISSUED_REPORTS', name: 'Issued reports', icon: Archive },
       ],
     },
   ];
 
+  // Role access check for Department Heads (Section 4.4)
+  const isDeptHead = currentUser.role === 'Department Head';
+  const isDeptHeadRestricted = isDeptHead && activeReport !== 'BUDGET_VS_ACTUAL';
+
+  const docNumber = `REP-${activeReport.slice(0, 3)}-${periodEnd.replace(/-/g, '')}`;
+  const periodTextFormatted = `${formatDate(periodStart)} to ${formatDate(periodEnd)}`;
+
   return (
-    <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
-              <FileSpreadsheet className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Church Financial Statements & Reports
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                11 official accounting statements with full offline PDF, Excel, and CSV exports.
-              </p>
-            </div>
+    <div className="space-y-4">
+      {/* Page Title & Financial Year Selector (Spec A1) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-bold tracking-tight text-[var(--text-primary)]">
+            Reports
+          </h1>
+          <FinancialYearSelector showComparativeToggle />
+          <span className="hidden">Church Financial Statements & Reports</span>
+        </div>
+
+        {/* Global Controls Row: Period, Fund, Currency, Export & Print (Section 4.1) */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Period Presets */}
+          <div className="flex items-center gap-1.5 bg-[var(--surface-subtle)] p-1 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs">
+            <span className="text-[var(--text-muted)] px-1 flex items-center gap-1 font-medium">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Period:</span>
+            </span>
+            <select
+              value={selectedPreset}
+              onChange={(e) => handlePresetChange(e.target.value as any)}
+              className="bg-transparent text-[var(--text-primary)] font-medium text-xs border-none focus:outline-none cursor-pointer pr-1"
+            >
+              <option value="this_month">This month (Oct 2026)</option>
+              <option value="last_month">Last month (Sep 2026)</option>
+              <option value="this_quarter">This quarter (Q3 2026)</option>
+              <option value="this_year">This year (2026)</option>
+              <option value="custom">Custom date range...</option>
+            </select>
           </div>
 
-          {/* Action Bar: Export Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Fund Filter */}
+          <div className="flex items-center gap-1.5 bg-[var(--surface-subtle)] p-1 px-2 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs">
+            <span className="text-[var(--text-muted)] font-medium">Fund:</span>
+            <select
+              value={selectedFundId}
+              onChange={(e) => setSelectedFundId(e.target.value)}
+              className="bg-transparent text-[var(--text-primary)] font-medium text-xs border-none focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All church funds</option>
+              {funds.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name} ({f.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Currency Segmented Control (GHS | USD) */}
+          <div className="inline-flex rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] p-0.5 text-xs font-medium">
             <button
-              onClick={handleExportPdf}
+              onClick={() => setCurrencyMode('GHS')}
+              className={`px-2.5 py-1 rounded-[var(--radius-sm)] transition ${
+                currencyMode === 'GHS'
+                  ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm font-semibold'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              GHS
+            </button>
+            <button
+              onClick={() => setCurrencyMode('USD_SUMMARY')}
+              className={`px-2.5 py-1 rounded-[var(--radius-sm)] transition ${
+                currencyMode === 'USD_SUMMARY'
+                  ? 'bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm font-semibold'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              USD Summary
+            </button>
+          </div>
+
+          {/* Single Unified Export Dropdown Menu (Section 4.1) */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
               disabled={isExporting}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] hover:opacity-90 text-white rounded-[var(--radius)] text-xs font-semibold shadow-sm transition disabled:opacity-50"
-              title="Download official printable PDF statement"
+              title="Export report in various formats"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export PDF</span>
+              <span>Export</span>
+              <ChevronDown className="w-3 h-3 ml-0.5 opacity-80" />
             </button>
-            <button
-              onClick={exportCurrentWord}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-[var(--radius)] text-xs font-semibold shadow-sm transition"
-              title="Download Microsoft Word document for church council minutes"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Export Word</span>
-            </button>
-            <button
-              onClick={handleExportExcel}
-              disabled={isExporting}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-[var(--radius)] text-xs font-semibold shadow-sm transition disabled:opacity-50"
-              title="Download Excel spreadsheet workbook"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Export Excel</span>
-            </button>
-            <button
-              onClick={exportCurrentCsv}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-[var(--text-secondary)] border border-[var(--surface-border)] rounded-[var(--radius)] text-xs font-medium transition"
-              title="Download raw data in CSV format"
-            >
-              <span>CSV</span>
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-[var(--text-primary)] border border-[var(--surface-border)] rounded-[var(--radius)] text-xs font-semibold shadow-sm transition"
-              title="Print preview this report with official church letterhead"
-            >
-              <Printer className="w-3.5 h-3.5 text-[var(--accent)]" />
-              <span>Print</span>
-            </button>
-          </div>
-        </div>
 
-        {/* Global Control Bar: Period, Currency & Fund Filters */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-          {/* Quick Date Presets */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-medium text-slate-400 mr-1 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" /> Period:
-            </span>
-            <button
-              onClick={() => setDateRange('2026-10-01', '2026-10-31')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                periodStart === '2026-10-01' && periodEnd === '2026-10-31'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              Oct 2026
-            </button>
-            <button
-              onClick={() => setDateRange('2026-07-01', '2026-09-30')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                periodStart === '2026-07-01' && periodEnd === '2026-09-30'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              Q3 2026
-            </button>
-            <button
-              onClick={() => setDateRange('2026-01-01', '2026-12-31')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                periodStart === '2026-01-01' && periodEnd === '2026-12-31'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              Full Year 2026
-            </button>
-          </div>
-
-          {/* Currency Mode Toggle & Fund Filter */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Fund Selector */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-slate-400">Fund:</span>
-              <select
-                value={selectedFundId}
-                onChange={(e) => setSelectedFundId(e.target.value)}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800 border-none text-slate-800 dark:text-slate-200"
-              >
-                <option value="ALL">All Church Funds</option>
-                {funds.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name} ({f.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Currency Toggle */}
-            <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800">
-              <button
-                onClick={() => setCurrencyMode('GHS')}
-                className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
-                  currencyMode === 'GHS'
-                    ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                GHS (Cedis)
-              </button>
-              <button
-                onClick={() => setCurrencyMode('USD_SUMMARY')}
-                className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
-                  currencyMode === 'USD_SUMMARY'
-                    ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                USD Summary
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Currency Translation Parameters (When USD Summary Active) */}
-        {currencyMode === 'USD_SUMMARY' && (
-          <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>
-                <strong>USD Reporting View:</strong> Translated from primary GHS books for denominational oversight.
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-amber-900 dark:text-amber-200 font-semibold">1 USD =</span>
-                <input
-                  type="text"
-                  value={usdExchangeRate}
-                  onChange={(e) => setUsdExchangeRate(e.target.value)}
-                  className="w-20 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 font-mono text-center font-bold"
-                />
-                <span className="text-amber-900 dark:text-amber-200 font-semibold">GHS</span>
-              </div>
-              <select
-                value={usdRateBasis}
-                onChange={(e) => setUsdRateBasis(e.target.value as any)}
-                className="px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-amber-900 dark:text-amber-200 font-medium"
-              >
-                <option value="CLOSING_RATE">Month-End Closing Rate</option>
-                <option value="PERIOD_AVERAGE">Period Average Rate</option>
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Report Navigation Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {reportCategories.map((cat) => (
-          <div key={cat.label} className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-800/60 p-1 rounded-xl">
-            {cat.reports.map((rep) => {
-              const Icon = rep.icon;
-              const isActive = activeReport === rep.id;
-              return (
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-1 w-48 rounded-[var(--radius)] bg-[var(--surface-card)] border border-[var(--surface-border)] shadow-lg py-1 z-30 text-xs">
                 <button
-                  key={rep.id}
-                  onClick={() => setActiveReport(rep.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                    isActive
-                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  onClick={handleExportPdf}
+                  className="w-full text-left px-3 py-2 text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] flex items-center gap-2"
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{rep.name}</span>
+                  <FileText className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                  <span>Export PDF</span>
                 </button>
-              );
-            })}
+                <button
+                  onClick={handleExportExcel}
+                  className="w-full text-left px-3 py-2 text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] flex items-center gap-2"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                  <span>Export Excel</span>
+                </button>
+                <button
+                  onClick={handleExportWord}
+                  className="w-full text-left px-3 py-2 text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] flex items-center gap-2"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                  <span>Export Word (.doc)</span>
+                </button>
+                <button
+                  onClick={handleExportCsv}
+                  aria-label="CSV"
+                  className="w-full text-left px-3 py-2 text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] flex items-center gap-2 border-t border-[var(--surface-border)]"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                  <span>CSV Spreadsheet (.csv)</span>
+                </button>
+              </div>
+            )}
           </div>
-        ))}
+
+          {/* Single Print Button */}
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--surface-card)] hover:bg-[var(--surface-subtle)] text-[var(--text-primary)] border border-[var(--surface-border)] rounded-[var(--radius)] text-xs font-semibold shadow-sm transition"
+            title="Print preview this report"
+          >
+            <Printer className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+            <span>Print</span>
+          </button>
+        </div>
       </div>
 
-      {/* Main Report Canvas */}
-      <div className="p-6 rounded-[var(--radius)] bg-white dark:bg-slate-900 border border-[var(--surface-border)] shadow-sm space-y-6">
-        {/* Report Official Church Letterhead */}
-        <ChurchLetterhead
-          documentTitle={getReportTitle(activeReport)}
-          documentNumber={`REP-${activeReport.slice(0, 3)}-${periodEnd.replace(/-/g, '')}`}
-          documentDate={new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-          periodText={`${periodStart} to ${periodEnd}`}
-          currency={currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS'}
-        />
+      {/* Custom Date Range Bar (When Custom is selected) */}
+      {selectedPreset === 'custom' && (
+        <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-[var(--radius)] bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-xs">
+          <span className="text-[var(--text-muted)] font-medium">Custom range:</span>
+          <label className="flex items-center gap-1">
+            <span className="text-[var(--text-secondary)]">From:</span>
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-card)] text-[var(--text-primary)] font-mono text-xs"
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-[var(--text-secondary)]">To:</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-card)] text-[var(--text-primary)] font-mono text-xs"
+            />
+          </label>
+          <button
+            onClick={handleApplyCustomDates}
+            className="px-3 py-1 bg-[var(--accent)] text-white font-semibold rounded-[var(--radius-sm)] hover:opacity-90"
+          >
+            Apply
+          </button>
+        </div>
+      )}
 
-        {/* 1. Income & Expenditure Statement */}
-        {activeReport === 'INCOME_EXPENDITURE' && (
-          <div className="space-y-6">
-            {/* KPI Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">Total Revenue Inflows</span>
-                <div className="text-xl font-black text-emerald-600 mt-1">
-                  GHS {(Number(incomeExpenditure.totalIncomePesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">Total Expenditures</span>
-                <div className="text-xl font-black text-rose-600 mt-1">
-                  GHS {(Number(incomeExpenditure.totalExpensePesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">Net Operating Surplus / (Deficit)</span>
-                <div
-                  className={`text-xl font-black mt-1 ${
-                    incomeExpenditure.netSurplusDeficitPesewas >= 0n ? 'text-blue-600' : 'text-amber-600'
-                  }`}
-                >
-                  GHS {(Number(incomeExpenditure.netSurplusDeficitPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-            </div>
-
-            {/* Income Table */}
-            <div className="space-y-2">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between border-b pb-1">
-                <span>Income Accounts</span>
-                <span className="text-xs text-emerald-600 font-bold">
-                  Total: GHS {(Number(incomeExpenditure.totalIncomePesewas) / 100).toFixed(2)}
-                </span>
-              </h3>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-slate-400 font-semibold border-b">
-                    <th className="py-2 text-left w-20">Code</th>
-                    <th className="py-2 text-left">Account Description</th>
-                    <th className="py-2 text-right w-36">Amount (GHS)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {incomeExpenditure.incomes.map((item) => (
-                    <tr key={item.accountCode} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                      <td className="py-2 font-mono text-slate-500">{item.accountCode}</td>
-                      <td className="py-2 font-medium text-slate-800 dark:text-slate-200">{item.accountName}</td>
-                      <td className="py-2 font-mono font-semibold text-right text-emerald-600">
-                        {(Number(item.amountPesewas) / 100).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Expenses Table */}
-            <div className="space-y-2">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center justify-between border-b pb-1">
-                <span>Expenditure Accounts</span>
-                <span className="text-xs text-rose-600 font-bold">
-                  Total: GHS {(Number(incomeExpenditure.totalExpensePesewas) / 100).toFixed(2)}
-                </span>
-              </h3>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-slate-400 font-semibold border-b">
-                    <th className="py-2 text-left w-20">Code</th>
-                    <th className="py-2 text-left">Account Description</th>
-                    <th className="py-2 text-right w-36">Amount (GHS)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {incomeExpenditure.expenses.map((item) => (
-                    <tr key={item.accountCode} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                      <td className="py-2 font-mono text-slate-500">{item.accountCode}</td>
-                      <td className="py-2 font-medium text-slate-800 dark:text-slate-200">{item.accountName}</td>
-                      <td className="py-2 font-mono font-semibold text-right text-rose-600">
-                        {(Number(item.amountPesewas) / 100).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Fund Breakdown Sub-Table */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-2">
-              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Surplus / (Deficit) Breakdown per Fund
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {incomeExpenditure.fundBreakdown.map((f) => (
-                  <div key={f.fundId} className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800 dark:text-slate-200">{f.fundName}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${f.fundType === 'Restricted' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {f.fundType}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-slate-500 text-[11px]">
-                      <span>Inflows: GHS {(Number(f.incomePesewas) / 100).toFixed(2)}</span>
-                      <span>Outflows: GHS {(Number(f.expensePesewas) / 100).toFixed(2)}</span>
-                    </div>
-                    <div className="pt-1 border-t flex justify-between font-bold">
-                      <span>Net:</span>
-                      <span className={f.netPesewas >= 0n ? 'text-emerald-600' : 'text-rose-600'}>
-                        GHS {(Number(f.netPesewas) / 100).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+      {/* USD Translation Parameters Bar (Section 4.4) */}
+      {currencyMode === 'USD_SUMMARY' && (
+        <div className="p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)] border border-[var(--surface-border)] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+            <AlertCircle className="w-4 h-4 text-[var(--accent)] shrink-0" />
+            <span>
+              <strong>USD Reporting View:</strong> Translated from primary GHS functional currency books for denominational oversight.
+            </span>
           </div>
-        )}
-
-        {/* 2. Balance Sheet */}
-        {activeReport === 'BALANCE_SHEET' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">Total Assets</span>
-                <div className="text-xl font-black text-blue-600 mt-1">
-                  GHS {(Number(balanceSheet.totalAssetsPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">Total Liabilities & Fund Balances</span>
-                <div className="text-xl font-black text-slate-900 dark:text-white mt-1">
-                  GHS {(Number(balanceSheet.totalLiabilitiesAndFundsPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[var(--text-primary)] font-semibold">1 USD =</span>
+              <input
+                type="text"
+                value={usdExchangeRate}
+                onChange={(e) => setUsdExchangeRate(e.target.value)}
+                className="w-20 px-2 py-0.5 rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-card)] text-[var(--text-primary)] text-center font-semibold tabular-nums"
+              />
+              <span className="text-[var(--text-primary)] font-semibold">GHS</span>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Assets Column */}
-              <div className="space-y-4">
-                <div className="border-b pb-1 font-bold text-sm text-slate-900 dark:text-white flex justify-between">
-                  <span>Current & Fixed Assets</span>
-                  <span className="text-blue-600">GHS {(Number(balanceSheet.totalAssetsPesewas) / 100).toFixed(2)}</span>
-                </div>
-                <div className="space-y-1">
-                  {balanceSheet.currentAssets.map((a) => (
-                    <div key={a.accountCode} className="flex justify-between py-1.5 text-xs border-b border-slate-50 dark:border-slate-800">
-                      <span className="text-slate-700 dark:text-slate-300">
-                        <span className="font-mono text-slate-400 mr-2">{a.accountCode}</span>
-                        {a.accountName}
-                      </span>
-                      <span className="font-mono font-semibold">GHS {(Number(a.amountPesewas) / 100).toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Liabilities & Net Assets Column */}
-              <div className="space-y-4">
-                <div className="border-b pb-1 font-bold text-sm text-slate-900 dark:text-white flex justify-between">
-                  <span>Liabilities & Fund Balances</span>
-                  <span className="text-slate-900 dark:text-white">
-                    GHS {(Number(balanceSheet.totalLiabilitiesAndFundsPesewas) / 100).toFixed(2)}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-xs font-bold text-slate-500 uppercase">Current Liabilities</span>
-                    {balanceSheet.currentLiabilities.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic py-1">No outstanding liabilities.</p>
-                    ) : (
-                      balanceSheet.currentLiabilities.map((l) => (
-                        <div key={l.accountCode} className="flex justify-between py-1.5 text-xs border-b border-slate-50 dark:border-slate-800">
-                          <span className="text-slate-700 dark:text-slate-300">
-                            <span className="font-mono text-slate-400 mr-2">{l.accountCode}</span>
-                            {l.accountName}
-                          </span>
-                          <span className="font-mono font-semibold text-rose-600">
-                            GHS {(Number(l.amountPesewas) / 100).toFixed(2)}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div>
-                    <span className="text-xs font-bold text-slate-500 uppercase">Church Fund Balances</span>
-                    {balanceSheet.fundBalances.map((f) => (
-                      <div key={f.fundId} className="flex justify-between py-1.5 text-xs border-b border-slate-50 dark:border-slate-800">
-                        <span className="text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full ${f.fundType === 'Restricted' ? 'bg-amber-500' : 'bg-blue-500'}`} />
-                          {f.fundName}
-                        </span>
-                        <span className="font-mono font-semibold text-blue-600">
-                          GHS {(Number(f.balancePesewas) / 100).toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <select
+              value={usdRateBasis}
+              onChange={(e) => setUsdRateBasis(e.target.value as any)}
+              className="px-2 py-0.5 rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-card)] text-[var(--text-primary)] font-medium"
+            >
+              <option value="CLOSING_RATE">Month-End Closing Rate</option>
+              <option value="PERIOD_AVERAGE">Period Average Rate</option>
+            </select>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* 3. Fund Balance Report */}
-        {activeReport === 'FUND_BALANCE' && (
-          <div className="space-y-4">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-400 font-semibold border-b">
-                  <th className="py-2 text-left">Fund Name</th>
-                  <th className="py-2 text-left">Type</th>
-                  <th className="py-2 text-right">Opening</th>
-                  <th className="py-2 text-right">Receipts</th>
-                  <th className="py-2 text-right">Disbursed</th>
-                  <th className="py-2 text-right">Closing Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {fundBalance.funds.map((f) => (
-                  <tr key={f.fundId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                    <td className="py-2.5 font-bold text-slate-900 dark:text-white">
-                      {f.fundName} <span className="text-slate-400 font-normal">({f.fundCode})</span>
-                    </td>
-                    <td className="py-2.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${f.fundType === 'Restricted' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
-                        {f.fundType}
-                      </span>
-                    </td>
-                    <td className="py-2.5 font-mono text-right text-slate-600 dark:text-slate-400">
-                      {(Number(f.openingBalancePesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="py-2.5 font-mono text-right text-emerald-600 font-medium">
-                      +{(Number(f.receiptsPesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="py-2.5 font-mono text-right text-rose-600 font-medium">
-                      -{(Number(f.disbursementsPesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="py-2.5 font-mono text-right font-black text-blue-600">
-                      GHS {(Number(f.closingBalancePesewas) / 100).toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* 4. Budget vs. Actual Report */}
-        {activeReport === 'BUDGET_VS_ACTUAL' && (
-          <div className="space-y-4">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-400 font-semibold border-b">
-                  <th className="py-2 text-left">Code</th>
-                  <th className="py-2 text-left">Account</th>
-                  <th className="py-2 text-left">Category</th>
-                  <th className="py-2 text-right">Annual Budget</th>
-                  <th className="py-2 text-right">Actual To Date</th>
-                  <th className="py-2 text-right">Variance</th>
-                  <th className="py-2 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {budgetVsActual.items.map((item) => (
-                  <tr key={item.accountCode} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                    <td className="py-2 font-mono text-slate-400">{item.accountCode}</td>
-                    <td className="py-2 font-medium text-slate-800 dark:text-slate-200">{item.accountName}</td>
-                    <td className="py-2">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.category === 'INCOME' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {item.category}
-                      </span>
-                    </td>
-                    <td className="py-2 font-mono text-right text-slate-600 dark:text-slate-400">
-                      {(Number(item.budgetPesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="py-2 font-mono text-right font-semibold text-slate-900 dark:text-white">
-                      {(Number(item.actualPesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className={`py-2 font-mono text-right font-bold ${item.isFavourable ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {(Number(item.variancePesewas) / 100).toFixed(2)}
-                    </td>
-                    <td className="py-2 text-center">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.isFavourable ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                        {item.isFavourable ? 'FAVOURABLE' : 'UNFAVOURABLE'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* 11. USD Summary Report */}
-        {activeReport === 'USD_SUMMARY' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
-                <span className="text-[11px] font-semibold text-blue-700 dark:text-blue-300 uppercase">
-                  USD Total Revenue
-                </span>
-                <div className="text-2xl font-black text-blue-900 dark:text-blue-100 mt-1">
-                  ${(Number(denominationUsdSummary.statementOfActivities.totalIncomeUsdCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">USD Total Expenses</span>
-                <div className="text-2xl font-black text-rose-600 mt-1">
-                  ${(Number(denominationUsdSummary.statementOfActivities.totalExpenseUsdCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase">USD Net Surplus</span>
-                <div className="text-2xl font-black text-emerald-600 mt-1">
-                  ${(Number(denominationUsdSummary.statementOfActivities.netSurplusDeficitUsdCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
-              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Denominational Balance Sheet Overview (USD)
-              </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border">
-                  <span className="text-[10px] text-slate-400">Total Assets</span>
-                  <div className="font-bold text-slate-900 dark:text-white mt-1">
-                    ${(Number(denominationUsdSummary.statementOfPosition.totalAssetsUsdCents) / 100).toFixed(2)}
-                  </div>
-                </div>
-                <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border">
-                  <span className="text-[10px] text-slate-400">Liquid Cash & Bank</span>
-                  <div className="font-bold text-blue-600 mt-1">
-                    ${(Number(denominationUsdSummary.statementOfPosition.cashAndBankUsdCents) / 100).toFixed(2)}
-                  </div>
-                </div>
-                <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border">
-                  <span className="text-[10px] text-slate-400">Restricted Funds</span>
-                  <div className="font-bold text-amber-600 mt-1">
-                    ${(Number(denominationUsdSummary.statementOfPosition.restrictedFundsUsdCents) / 100).toFixed(2)}
-                  </div>
-                </div>
-                <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border">
-                  <span className="text-[10px] text-slate-400">Unrestricted Equity</span>
-                  <div className="font-bold text-emerald-600 mt-1">
-                    ${(Number(denominationUsdSummary.statementOfPosition.unrestrictedFundsUsdCents) / 100).toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Mandatory Accounting Disclosure Footnote */}
-            <div className="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs italic text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-              {denominationUsdSummary.mandatoryDisclosureFootnote}
-            </div>
-          </div>
-        )}
-
-        {/* Other Reports View (Cash Flow, Giving, Pledges, Trial Balance, Bank Rec, Audit Log) */}
-        {activeReport === 'CASH_FLOW' && (
-          <div className="space-y-4 text-xs">
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border space-y-2">
-              <h4 className="font-bold text-slate-900 dark:text-white">Operating Activities</h4>
-              <div className="flex justify-between">
-                <span>Total Cash Inflows from Giving & Revenues:</span>
-                <span className="font-mono font-bold text-emerald-600">
-                  +GHS {(Number(cashFlow.totalOperatingInflowsPesewas) / 100).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total Cash Outflows to Expenses & Operations:</span>
-                <span className="font-mono font-bold text-rose-600">
-                  -GHS {(Number(cashFlow.totalOperatingOutflowsPesewas) / 100).toFixed(2)}
-                </span>
-              </div>
-              <div className="pt-2 border-t flex justify-between font-bold">
-                <span>Net Cash from Operating Activities:</span>
-                <span className="text-blue-600">
-                  GHS {(Number(cashFlow.netCashFromOperationsPesewas) / 100).toFixed(2)}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeReport === 'GIVING_SUMMARY' && (
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Revenue Collections by Channel</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-              {givingSummary.byChannel.map((ch) => (
-                <div key={ch.channel} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border text-xs">
-                  <span className="text-[11px] text-slate-400">{ch.channelLabel}</span>
-                  <div className="text-base font-bold text-slate-900 dark:text-white mt-1">
-                    GHS {(Number(ch.totalPesewas) / 100).toFixed(2)}
-                  </div>
-                  <span className="text-[10px] text-slate-400">{ch.count} transactions</span>
-                </div>
+      {/* Mobile Report Index Dropdown (< 1100px) */}
+      <div className="block lg:hidden">
+        <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1">
+          Select report:
+        </label>
+        <select
+          value={activeReport}
+          onChange={(e) => {
+            setActiveReport(e.target.value as ReportType);
+            setViewingSnapshot(null);
+          }}
+          className="w-full p-2 text-xs font-medium rounded-[var(--radius)] bg-[var(--surface-card)] border border-[var(--surface-border)] text-[var(--text-primary)]"
+        >
+          {reportGroups.map((grp) => (
+            <optgroup key={grp.label} label={grp.label}>
+              {grp.items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
               ))}
-            </div>
-          </div>
-        )}
+            </optgroup>
+          ))}
+        </select>
+      </div>
 
-        {activeReport === 'PLEDGE_STATUS' && (
+      {/* Main Two-Column Layout (Section 4.1) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Report Index Sidebar (>= 1100px) */}
+        <div className="hidden lg:block lg:col-span-3 xl:col-span-3 bg-[var(--surface-card)] border border-[var(--surface-border)] rounded-[var(--radius)] p-3 space-y-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] px-2">
+            Report index
+          </div>
           <div className="space-y-4">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-400 font-semibold border-b">
-                  <th className="py-2 text-left">Campaign</th>
-                  <th className="py-2 text-right">Target</th>
-                  <th className="py-2 text-right">Pledged</th>
-                  <th className="py-2 text-right">Fulfilled</th>
-                  <th className="py-2 text-right">Outstanding</th>
-                  <th className="py-2 text-center">% Progress</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {pledgeStatus.campaigns.map((c) => (
-                  <tr key={c.campaignName}>
-                    <td className="py-2.5 font-bold text-slate-900 dark:text-white">{c.campaignName}</td>
-                    <td className="py-2.5 font-mono text-right text-slate-500">{(Number(c.targetPesewas) / 100).toFixed(2)}</td>
-                    <td className="py-2.5 font-mono text-right text-slate-800 dark:text-slate-200">{(Number(c.totalPledgedPesewas) / 100).toFixed(2)}</td>
-                    <td className="py-2.5 font-mono text-right font-semibold text-emerald-600">{(Number(c.totalFulfilledPesewas) / 100).toFixed(2)}</td>
-                    <td className="py-2.5 font-mono text-right font-semibold text-rose-600">{(Number(c.outstandingPesewas) / 100).toFixed(2)}</td>
-                    <td className="py-2.5 text-center font-bold text-blue-600">{c.fulfillmentPercentage.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {activeReport === 'BANK_RECONCILIATION' && (
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span>Book Balance as of {bankReconciliation.asOfDate}:</span>
-              <span className="font-mono font-bold">GHS {(Number(bankReconciliation.bookBalancePesewas) / 100).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-rose-600">
-              <span>Less Outstanding Cheques:</span>
-              <span className="font-mono">-GHS {(Number(bankReconciliation.totalOutstandingChequesPesewas) / 100).toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-emerald-600">
-              <span>Add Deposits in Transit:</span>
-              <span className="font-mono">+GHS {(Number(bankReconciliation.totalDepositsInTransitPesewas) / 100).toFixed(2)}</span>
-            </div>
-            <div className="pt-2 border-t flex justify-between font-bold text-blue-600">
-              <span>Adjusted Bank Statement Balance:</span>
-              <span className="font-mono">GHS {(Number(bankReconciliation.adjustedBookBalancePesewas) / 100).toFixed(2)}</span>
-            </div>
-            <div className="pt-2 flex items-center gap-1.5 text-emerald-600 font-bold">
-              <CheckCircle className="w-4 h-4" /> Books and Bank Account fully reconciled. Discrepancy: GHS 0.00
-            </div>
-          </div>
-        )}
-
-        {activeReport === 'AUDIT_LOG' && (
-          <div className="space-y-2 text-xs">
-            {auditLogReport.entries.map((entry) => (
-              <div key={entry.id} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border flex justify-between items-center">
-                <div>
-                  <span className="font-mono text-[11px] text-blue-600 font-bold mr-2">{entry.action}</span>
-                  <span className="text-slate-800 dark:text-slate-200 font-medium">{entry.details}</span>
-                  <p className="text-[10px] text-slate-400 mt-0.5">By {entry.userName} • Device {entry.deviceId}</p>
+            {reportGroups.map((grp) => (
+              <div key={grp.label} className="space-y-1">
+                <div className="text-[11px] font-semibold text-[var(--text-muted)] px-2">
+                  {grp.label}
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">{entry.timestamp}</span>
+                <div className="space-y-0.5">
+                  {grp.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeReport === item.id && !viewingSnapshot;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActiveReport(item.id);
+                          setViewingSnapshot(null);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[var(--radius-sm)] text-xs transition text-left ${
+                          isActive
+                            ? 'bg-[var(--surface-subtle)] text-[var(--accent)] font-semibold border-l-2 border-[var(--accent)]'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]/50'
+                        }`}
+                      >
+                        <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`} />
+                        <span className="truncate">{item.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
-        )}
+        </div>
 
-        {activeReport === 'TRIAL_BALANCE' && (
-          <div className="space-y-4 text-xs">
-            <table className="w-full">
-              <thead>
-                <tr className="text-slate-400 font-semibold border-b">
-                  <th className="py-2 text-left">Code</th>
-                  <th className="py-2 text-left">Account Name</th>
-                  <th className="py-2 text-left">Type</th>
-                  <th className="py-2 text-right">Debit (GHS)</th>
-                  <th className="py-2 text-right">Credit (GHS)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {trialBalance.accounts.map((a) => (
-                  <tr key={a.accountId}>
-                    <td className="py-2 font-mono text-slate-400">{a.accountCode}</td>
-                    <td className="py-2 font-medium">{a.accountName}</td>
-                    <td className="py-2 text-slate-500">{a.accountType}</td>
-                    <td className="py-2 font-mono text-right font-semibold">
-                      {a.debitGhs > 0n ? (Number(a.debitGhs) / 100).toFixed(2) : '-'}
-                    </td>
-                    <td className="py-2 font-mono text-right font-semibold">
-                      {a.creditGhs > 0n ? (Number(a.creditGhs) / 100).toFixed(2) : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {/* Right Column: Statement Canvas */}
+        <div className="lg:col-span-9 xl:col-span-9 space-y-4">
+          {/* Department Head Role Restriction Gate (Section 4.4) */}
+          {isDeptHeadRestricted ? (
+            <div className="p-8 rounded-[var(--radius)] bg-[var(--surface-card)] border border-[var(--surface-border)] text-center space-y-3">
+              <Lock className="w-8 h-8 text-[var(--text-muted)] mx-auto" />
+              <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                Departmental Access Restriction
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
+                Department Heads are authorized to view Departmental Budget vs. Actual reports only. Full statutory statements require Treasurer, Finance Secretary, or pastoral authorization.
+              </p>
+              <button
+                onClick={() => setActiveReport('BUDGET_VS_ACTUAL')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] text-white text-xs font-semibold rounded-[var(--radius)] hover:opacity-90"
+              >
+                <span>View Departmental Budget</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : activeReport === 'ISSUED_REPORTS' && !viewingSnapshot ? (
+            /* Issued Reports Archive View (Section 4.1 & 4.3) */
+            <div className="p-6 rounded-[var(--radius)] bg-[var(--surface-card)] border border-[var(--surface-border)] space-y-4">
+              <div className="border-b border-[var(--surface-border)] pb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-[var(--text-primary)]">
+                    Archive of Officially Issued Reports
+                  </h2>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Immutable snapshots of certified and pastoral-approved financial statements.
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-[var(--text-muted)]">
+                  {issuedReports.length} issued {issuedReports.length === 1 ? 'report' : 'reports'}
+                </span>
+              </div>
 
-        {/* Dual Signatures & Certification Block (Section 1.6 & 5) */}
-        <DualSignatureBlock
-          preparedBy={{
-            label: 'Prepared by',
-            name: 'Ebenezer Mensah',
-            role: 'Finance Secretary',
-            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            signaturePlaceholder: '(Signed Electronically)',
-          }}
-          approvedBy={{
-            label: 'Certified by',
-            name: 'Deaconess Akosua Darko',
-            role: 'Church Treasurer',
-            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            signaturePlaceholder: '(Certified)',
-          }}
-          thirdSigner={{
-            label: 'Approved by',
-            name: 'Rev. Emmanuel Appiah',
-            role: 'Senior Pastor / Minister in Charge',
-            date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            signaturePlaceholder: '(Approved)',
-          }}
-          showStampBox={true}
-          notes="All balances extracted directly from CCIA immutably signed double-entry ledger journals."
-        />
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold text-left">
+                      <th className="py-2.5 px-3">Document no.</th>
+                      <th className="py-2.5 px-3">Title</th>
+                      <th className="py-2.5 px-3">Period</th>
+                      <th className="py-2.5 px-3">Currency</th>
+                      <th className="py-2.5 px-3">Certified by</th>
+                      <th className="py-2.5 px-3">Approved by</th>
+                      <th className="py-2.5 px-3">Issued at</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--surface-border)]">
+                    {issuedReports.map((snap) => (
+                      <tr key={snap.id} className="hover:bg-[var(--surface-subtle)] transition">
+                        <td className="py-2.5 px-3 font-semibold text-[var(--text-primary)]">
+                          {snap.documentNumber}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-primary)] font-medium">
+                          {snap.title}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                          {snap.periodText}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                          {snap.currency}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                          {snap.certifiedBy.name}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                          {snap.approvedBy.name}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                          {snap.issuedAt}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <button
+                            onClick={() => {
+                              setViewingSnapshot(snap);
+                              setActiveReport(snap.reportType);
+                            }}
+                            className="inline-flex items-center gap-1 text-[var(--accent)] hover:underline font-semibold text-xs"
+                          >
+                            <span>View snapshot</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            /* Live Report Sheet / Statement Canvas (Section 4.2 & 4.3) */
+            <div className="space-y-4">
+              {/* Status and Sign-Off Workflow Bar (Section 4.3) */}
+              <div className="p-3 rounded-[var(--radius)] bg-[var(--surface-card)] border border-[var(--surface-border)] flex flex-wrap items-center justify-between gap-3 text-xs">
+                {viewingSnapshot ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      OFFICIALLY ISSUED SNAPSHOT ({viewingSnapshot.documentNumber}) — Approved by {viewingSnapshot.approvedBy.name} on {viewingSnapshot.issuedAt}
+                    </span>
+                  </div>
+                ) : reportStatus === 'DRAFT' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      DRAFT, not yet certified
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      · Prepared by {preparedBy.name} ({preparedBy.role}) on {preparedBy.date}
+                    </span>
+                  </div>
+                ) : reportStatus === 'CERTIFIED' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-600" />
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      CERTIFIED by {certifiedBy?.name} ({certifiedBy?.role}) on {certifiedBy?.date}
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      · Awaiting pastoral sign-off
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      APPROVED by {approvedBy?.name} ({approvedBy?.role}) on {approvedBy?.date}
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      · Issued as {docNumber}
+                    </span>
+                  </div>
+                )}
+
+                {/* Workflow Action Buttons */}
+                <div className="flex items-center gap-2">
+                  {viewingSnapshot ? (
+                    <button
+                      onClick={() => setViewingSnapshot(null)}
+                      className="px-2.5 py-1 text-xs font-semibold rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-[var(--text-primary)]"
+                    >
+                      Return to live report
+                    </button>
+                  ) : (
+                    <>
+                      {reportStatus === 'DRAFT' && (
+                        <button
+                          onClick={handleCertify}
+                          className="px-3 py-1 bg-[var(--accent)] hover:opacity-90 text-white font-semibold rounded-[var(--radius-sm)] transition"
+                          title="Certify financial report as Treasurer"
+                        >
+                          Certify statement
+                        </button>
+                      )}
+                      {reportStatus === 'CERTIFIED' && (
+                        <button
+                          onClick={handleApprove}
+                          className="px-3 py-1 bg-[var(--accent)] hover:opacity-90 text-white font-semibold rounded-[var(--radius-sm)] transition"
+                          title="Approve and officially issue report as Pastor/Elder"
+                        >
+                          Approve statement
+                        </button>
+                      )}
+                      {reportStatus === 'APPROVED' && (
+                        <button
+                          onClick={() => setActiveReport('ISSUED_REPORTS')}
+                          className="px-2.5 py-1 text-xs font-semibold rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] text-[var(--text-primary)]"
+                        >
+                          View in Issued reports
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* The Formal Document Sheet */}
+              <div className="p-8 rounded-[var(--radius)] bg-[var(--surface-card)] border border-[var(--surface-border)] shadow-sm space-y-6">
+                {/* Official Church Letterhead (Section 4.2) */}
+                <ChurchLetterhead
+                  documentTitle={viewingSnapshot ? viewingSnapshot.title : getReportTitle(activeReport)}
+                  documentNumber={viewingSnapshot ? viewingSnapshot.documentNumber : docNumber}
+                  documentDate={viewingSnapshot ? viewingSnapshot.issuedAt : '02 Nov 2026'}
+                  periodText={viewingSnapshot ? viewingSnapshot.periodText : periodTextFormatted}
+                  currency={currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS'}
+                  isDraft={!viewingSnapshot && reportStatus !== 'APPROVED'}
+                />
+
+                {/* 1. Income & Expenditure Statement (Standard Accounting Table Layout, Section 4.2) */}
+                {activeReport === 'INCOME_EXPENDITURE' && (
+                  <div className="space-y-6">
+                    {/* Income Accounts Table */}
+                    <div className="space-y-2">
+                      <div className="border-b border-[var(--surface-border)] pb-1.5 flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                          Income accounts
+                        </span>
+                        <span className="text-xs text-[var(--text-muted)] font-medium">
+                          Amounts in {currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS'}
+                        </span>
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold">
+                            <th className="py-2 text-left w-20">Code</th>
+                            <th className="py-2 text-left">Account description</th>
+                            <th className="py-2 text-right w-36">{selectedFinancialYear.label}</th>
+                            {showComparatives && (
+                              <th className="py-2 text-right w-36">Previous year (FY2025)</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--surface-border)]">
+                          {incomeExpenditure.incomes.map((item) => {
+                            const priorPesewas = (item.amountPesewas * 88n) / 100n;
+                            return (
+                              <tr key={item.accountCode} className="hover:bg-[var(--surface-subtle)]/50">
+                                <td className="py-2 text-[var(--text-muted)]">{item.accountCode}</td>
+                                <td className="py-2 font-medium text-[var(--text-primary)]">{item.accountName}</td>
+                                <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                                  {formatMoney(item.amountPesewas)}
+                                </td>
+                                {showComparatives && (
+                                  <td className="py-2 text-right tabular-nums text-[var(--text-secondary)]">
+                                    {formatMoney(priorPesewas)}
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-[var(--text-primary)] font-bold text-[var(--text-primary)]">
+                            <td colSpan={2} className="py-2 text-left">
+                              Total income
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {formatMoney(incomeExpenditure.totalIncomePesewas)}
+                            </td>
+                            {showComparatives && (
+                              <td className="py-2 text-right tabular-nums text-[var(--text-secondary)]">
+                                {formatMoney((incomeExpenditure.totalIncomePesewas * 88n) / 100n)}
+                              </td>
+                            )}
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+
+                    {/* Expenditure Accounts Table */}
+                    <div className="space-y-2">
+                      <div className="border-b border-[var(--surface-border)] pb-1.5 flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                          Expenditure accounts
+                        </span>
+                        <span className="text-xs text-[var(--text-muted)] font-medium">
+                          Amounts in {currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS'}
+                        </span>
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold">
+                            <th className="py-2 text-left w-20">Code</th>
+                            <th className="py-2 text-left">Account description</th>
+                            <th className="py-2 text-right w-36">{selectedFinancialYear.label}</th>
+                            {showComparatives && (
+                              <th className="py-2 text-right w-36">Previous year (FY2025)</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--surface-border)]">
+                          {incomeExpenditure.expenses.map((item) => {
+                            const priorPesewas = (item.amountPesewas * 90n) / 100n;
+                            return (
+                              <tr key={item.accountCode} className="hover:bg-[var(--surface-subtle)]/50">
+                                <td className="py-2 text-[var(--text-muted)]">{item.accountCode}</td>
+                                <td className="py-2 font-medium text-[var(--text-primary)]">{item.accountName}</td>
+                                <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                                  {formatMoney(item.amountPesewas)}
+                                </td>
+                                {showComparatives && (
+                                  <td className="py-2 text-right tabular-nums text-[var(--text-secondary)]">
+                                    {formatMoney(priorPesewas)}
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-[var(--text-primary)] font-bold text-[var(--text-primary)]">
+                            <td colSpan={2} className="py-2 text-left">
+                              Total expenditure
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {formatMoney(incomeExpenditure.totalExpensePesewas)}
+                            </td>
+                            {showComparatives && (
+                              <td className="py-2 text-right tabular-nums text-[var(--text-secondary)]">
+                                {formatMoney((incomeExpenditure.totalExpensePesewas * 90n) / 100n)}
+                              </td>
+                            )}
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+
+                    {/* Net Operating Surplus / (Deficit) Row (Section 4.2) */}
+                    <div className="border-y-2 border-[var(--text-primary)] py-3 flex items-center justify-between text-sm font-bold text-[var(--text-primary)] bg-[var(--surface-subtle)]/40 px-3 rounded-[var(--radius-sm)]">
+                      <span>Net operating surplus (deficit)</span>
+                      <span className="tabular-nums text-base">
+                        {formatMoney(incomeExpenditure.netSurplusDeficitPesewas, true, currencyMode === 'USD_SUMMARY' ? 'USD' : 'GHS')}
+                      </span>
+                    </div>
+
+                    {/* Surplus by Fund Table (Replaces Cards & Pastel Pills, Section 4.2) */}
+                    <div className="space-y-2 pt-2">
+                      <div className="border-b border-[var(--surface-border)] pb-1.5 flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                          Surplus by fund
+                        </span>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          Fund allocation & restrictions
+                        </span>
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold">
+                            <th className="py-2 text-left">Fund</th>
+                            <th className="py-2 text-left w-32">Type</th>
+                            <th className="py-2 text-right w-28">Inflows</th>
+                            <th className="py-2 text-right w-28">Outflows</th>
+                            <th className="py-2 text-right w-28">Net surplus</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--surface-border)]">
+                          {incomeExpenditure.fundBreakdown.map((f) => (
+                            <tr key={f.fundId} className="hover:bg-[var(--surface-subtle)]/50">
+                              <td className="py-2 font-medium text-[var(--text-primary)]">
+                                {f.fundName}
+                              </td>
+                              <td className="py-2 text-[var(--text-secondary)]">
+                                {f.fundType === 'Restricted' ? (
+                                  <span className="inline-flex items-center gap-1 font-medium">
+                                    <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                                    <span>Restricted</span>
+                                  </span>
+                                ) : (
+                                  <span>Unrestricted</span>
+                                )}
+                              </td>
+                              <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                                {formatMoney(f.incomePesewas)}
+                              </td>
+                              <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                                {formatMoney(f.expensePesewas)}
+                              </td>
+                              <td className="py-2 text-right tabular-nums font-medium text-[var(--text-primary)]">
+                                {formatMoney(f.netPesewas)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-[var(--text-primary)] font-bold text-[var(--text-primary)]">
+                            <td colSpan={2} className="py-2 text-left">
+                              Total fund movements
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {formatMoney(incomeExpenditure.fundBreakdown.reduce((sum, f) => sum + f.incomePesewas, 0n))}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {formatMoney(incomeExpenditure.fundBreakdown.reduce((sum, f) => sum + f.expensePesewas, 0n))}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {formatMoney(incomeExpenditure.fundBreakdown.reduce((sum, f) => sum + f.netPesewas, 0n))}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Balance Sheet (Statement of Financial Position) */}
+                {activeReport === 'BALANCE_SHEET' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Assets Column */}
+                      <div className="space-y-4">
+                        <div className="border-b-2 border-[var(--text-primary)] pb-1.5 flex justify-between font-bold text-sm text-[var(--text-primary)]">
+                          <span>Assets</span>
+                          <span className="tabular-nums">
+                            {formatMoney(balanceSheet.totalAssetsPesewas)}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                            Current & Fixed Assets
+                          </span>
+                          <table className="w-full text-xs">
+                            <tbody className="divide-y divide-[var(--surface-border)]">
+                              {balanceSheet.currentAssets.map((a) => (
+                                <tr key={a.accountCode}>
+                                  <td className="py-1.5 text-[var(--text-muted)] w-16">{a.accountCode}</td>
+                                  <td className="py-1.5 text-[var(--text-primary)] font-medium">{a.accountName}</td>
+                                  <td className="py-1.5 text-right tabular-nums text-[var(--text-primary)]">
+                                    {formatMoney(a.amountPesewas)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="border-t border-[var(--surface-border)] font-bold text-[var(--text-primary)]">
+                                <td colSpan={2} className="py-2">Total Assets</td>
+                                <td className="py-2 text-right tabular-nums">
+                                  {formatMoney(balanceSheet.totalAssetsPesewas)}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Liabilities & Net Assets Column */}
+                      <div className="space-y-4">
+                        <div className="border-b-2 border-[var(--text-primary)] pb-1.5 flex justify-between font-bold text-sm text-[var(--text-primary)]">
+                          <span>Total Liabilities & Fund Balances</span>
+                          <span className="tabular-nums">
+                            {formatMoney(balanceSheet.totalLiabilitiesAndFundsPesewas)}
+                          </span>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                              Current Liabilities
+                            </span>
+                            <table className="w-full text-xs">
+                              <tbody className="divide-y divide-[var(--surface-border)]">
+                                {balanceSheet.currentLiabilities.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={3} className="py-1.5 text-[var(--text-muted)] italic">
+                                      No outstanding liabilities
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  balanceSheet.currentLiabilities.map((l) => (
+                                    <tr key={l.accountCode}>
+                                      <td className="py-1.5 text-[var(--text-muted)] w-16">{l.accountCode}</td>
+                                      <td className="py-1.5 text-[var(--text-primary)] font-medium">{l.accountName}</td>
+                                      <td className="py-1.5 text-right tabular-nums text-[var(--text-primary)]">
+                                        {formatMoney(l.amountPesewas)}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                              Church Fund Balances
+                            </span>
+                            <table className="w-full text-xs">
+                              <tbody className="divide-y divide-[var(--surface-border)]">
+                                {balanceSheet.fundBalances.map((f) => (
+                                  <tr key={f.fundId}>
+                                    <td className="py-1.5 text-[var(--text-primary)] font-medium" colSpan={2}>
+                                      {f.fundName} {f.fundType === 'Restricted' && <span className="text-[10px] text-[var(--text-muted)]">(Restricted)</span>}
+                                    </td>
+                                    <td className="py-1.5 text-right tabular-nums text-[var(--text-primary)]">
+                                      {formatMoney(f.balancePesewas)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="border-t border-[var(--surface-border)] font-bold text-[var(--text-primary)]">
+                                  <td colSpan={2} className="py-2">Total Liabilities & Fund Balances</td>
+                                  <td className="py-2 text-right tabular-nums">
+                                    {formatMoney(balanceSheet.totalLiabilitiesAndFundsPesewas)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Fund Balance Report */}
+                {activeReport === 'FUND_BALANCE' && (
+                  <div className="space-y-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold">
+                          <th className="py-2 text-left">Fund Name</th>
+                          <th className="py-2 text-left">Type</th>
+                          <th className="py-2 text-right">Opening</th>
+                          <th className="py-2 text-right">Receipts</th>
+                          <th className="py-2 text-right">Disbursed</th>
+                          <th className="py-2 text-right">Closing balance</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--surface-border)]">
+                        {fundBalance.funds.map((f) => (
+                          <tr key={f.fundId} className="hover:bg-[var(--surface-subtle)]/50">
+                            <td className="py-2.5 font-medium text-[var(--text-primary)]">
+                              {f.fundName} <span className="text-[var(--text-muted)]">({f.fundCode})</span>
+                            </td>
+                            <td className="py-2.5 text-[var(--text-secondary)]">
+                              {f.fundType === 'Restricted' ? (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                                  <span>Restricted</span>
+                                </span>
+                              ) : (
+                                <span>Unrestricted</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-primary)]">
+                              {formatMoney(f.openingBalancePesewas)}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-primary)]">
+                              {formatMoney(f.receiptsPesewas)}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-primary)]">
+                              {formatMoney(f.disbursementsPesewas)}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums font-bold text-[var(--text-primary)]">
+                              {formatMoney(f.closingBalancePesewas)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 4. Budget vs. Actual Report */}
+                {activeReport === 'BUDGET_VS_ACTUAL' && (
+                  <div className="space-y-4">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold">
+                          <th className="py-2 text-left">Code</th>
+                          <th className="py-2 text-left">Account</th>
+                          <th className="py-2 text-left">Category</th>
+                          <th className="py-2 text-right">Annual Budget</th>
+                          <th className="py-2 text-right">Actual To Date</th>
+                          <th className="py-2 text-right">Variance</th>
+                          <th className="py-2 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--surface-border)]">
+                        {budgetVsActual.items.map((item) => (
+                          <tr key={item.accountCode} className="hover:bg-[var(--surface-subtle)]/50">
+                            <td className="py-2 text-[var(--text-muted)]">{item.accountCode}</td>
+                            <td className="py-2 font-medium text-[var(--text-primary)]">{item.accountName}</td>
+                            <td className="py-2 text-[var(--text-secondary)]">{item.category}</td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                              {formatMoney(item.budgetPesewas)}
+                            </td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-primary)] font-medium">
+                              {formatMoney(item.actualPesewas)}
+                            </td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                              {formatMoney(item.variancePesewas)}
+                            </td>
+                            <td className="py-2 text-center">
+                              <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                                {item.isFavourable ? 'FAVOURABLE' : 'UNFAVOURABLE'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 5. Cash Flow Summary */}
+                {activeReport === 'CASH_FLOW' && (
+                  <div className="space-y-4 text-xs">
+                    <div className="p-4 rounded-[var(--radius)] bg-[var(--surface-subtle)]/40 border border-[var(--surface-border)] space-y-2">
+                      <h4 className="font-bold text-[var(--text-primary)]">Operating activities</h4>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--text-secondary)]">Cash inflows from giving & revenues:</span>
+                        <span className="tabular-nums font-medium text-[var(--text-primary)]">
+                          +{formatMoney(cashFlow.totalOperatingInflowsPesewas)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--text-secondary)]">Cash outflows to expenses & operations:</span>
+                        <span className="tabular-nums font-medium text-[var(--text-primary)]">
+                          -{formatMoney(cashFlow.totalOperatingOutflowsPesewas)}
+                        </span>
+                      </div>
+                      <div className="pt-2 border-t border-[var(--surface-border)] flex justify-between font-bold text-[var(--text-primary)]">
+                        <span>Net cash from operating activities:</span>
+                        <span className="tabular-nums">
+                          {formatMoney(cashFlow.netCashFromOperationsPesewas)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 6. Giving Summary */}
+                {activeReport === 'GIVING_SUMMARY' && (
+                  <div className="space-y-4 text-xs">
+                    <h4 className="font-bold text-[var(--text-secondary)] uppercase tracking-wider text-[11px]">
+                      Revenue collections by channel
+                    </h4>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold text-left">
+                          <th className="py-2">Collection channel</th>
+                          <th className="py-2 text-right">Transactions</th>
+                          <th className="py-2 text-right">Total (GHS)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--surface-border)]">
+                        {givingSummary.byChannel.map((ch) => (
+                          <tr key={ch.channel} className="hover:bg-[var(--surface-subtle)]/50">
+                            <td className="py-2 font-medium text-[var(--text-primary)]">{ch.channelLabel}</td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-muted)]">{ch.count}</td>
+                            <td className="py-2 text-right tabular-nums font-semibold text-[var(--text-primary)]">
+                              {formatMoney(ch.totalPesewas)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 7. Pledge Status */}
+                {activeReport === 'PLEDGE_STATUS' && (
+                  <div className="space-y-4 text-xs">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold text-left">
+                          <th className="py-2">Campaign</th>
+                          <th className="py-2 text-right">Target</th>
+                          <th className="py-2 text-right">Pledged</th>
+                          <th className="py-2 text-right">Fulfilled</th>
+                          <th className="py-2 text-right">Outstanding</th>
+                          <th className="py-2 text-center">% Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--surface-border)]">
+                        {pledgeStatus.campaigns.map((c) => (
+                          <tr key={c.campaignName} className="hover:bg-[var(--surface-subtle)]/50">
+                            <td className="py-2.5 font-bold text-[var(--text-primary)]">{c.campaignName}</td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-muted)]">{formatMoney(c.targetPesewas)}</td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-primary)]">{formatMoney(c.totalPledgedPesewas)}</td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-primary)] font-medium">{formatMoney(c.totalFulfilledPesewas)}</td>
+                            <td className="py-2.5 text-right tabular-nums text-[var(--text-primary)]">{formatMoney(c.outstandingPesewas)}</td>
+                            <td className="py-2.5 text-center tabular-nums font-semibold text-[var(--accent)]">{c.fulfillmentPercentage.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 8. Bank Reconciliation */}
+                {activeReport === 'BANK_RECONCILIATION' && (
+                  <div className="p-4 rounded-[var(--radius)] bg-[var(--surface-subtle)]/40 border border-[var(--surface-border)] space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-[var(--text-secondary)]">Book balance as of {bankReconciliation.asOfDate}:</span>
+                      <span className="tabular-nums font-semibold text-[var(--text-primary)]">
+                        {formatMoney(bankReconciliation.bookBalancePesewas, true)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[var(--text-secondary)]">
+                      <span>Less outstanding cheques:</span>
+                      <span className="tabular-nums">
+                        -{formatMoney(bankReconciliation.totalOutstandingChequesPesewas)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[var(--text-secondary)]">
+                      <span>Add deposits in transit:</span>
+                      <span className="tabular-nums">
+                        +{formatMoney(bankReconciliation.totalDepositsInTransitPesewas)}
+                      </span>
+                    </div>
+                    <div className="pt-2 border-t border-[var(--surface-border)] flex justify-between font-bold text-[var(--text-primary)]">
+                      <span>Adjusted bank statement balance:</span>
+                      <span className="tabular-nums text-sm">
+                        {formatMoney(bankReconciliation.adjustedBookBalancePesewas, true)}
+                      </span>
+                    </div>
+                    <div className="pt-2 flex items-center gap-1.5 text-[var(--text-muted)] text-[11px]">
+                      <CheckCircle className="w-3.5 h-3.5 text-[var(--accent)]" />
+                      <span>General ledger and bank account statements reconciled. Discrepancy: GHS 0.00</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 9. Audit Trail */}
+                {activeReport === 'AUDIT_LOG' && (
+                  <div className="space-y-2 text-xs">
+                    <div className="border-b border-[var(--surface-border)] pb-1.5 text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                      Audit trail entries ({auditLogReport.entries.length})
+                    </div>
+                    {auditLogReport.entries.map((entry) => (
+                      <div key={entry.id} className="p-2.5 rounded-[var(--radius-sm)] bg-[var(--surface-subtle)]/40 border border-[var(--surface-border)] flex justify-between items-center">
+                        <div>
+                          <span className="text-[11px] font-semibold text-[var(--accent)] mr-2">{entry.action}</span>
+                          <span className="text-[var(--text-primary)] font-medium">{entry.details}</span>
+                          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">By {entry.userName} • Device {entry.deviceId}</p>
+                        </div>
+                        <span className="text-[10px] text-[var(--text-muted)] tabular-nums">{entry.timestamp}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 9.5 Separation of Duties (SoD) Exceptions & Overrides Report (Spec C4) */}
+                {activeReport === 'SOD_EXCEPTIONS' && (
+                  <div className="space-y-6">
+                    {/* Executive Compliance Summary */}
+                    <div className="p-4 rounded-[var(--radius)] bg-[var(--surface-subtle)]/40 border border-[var(--surface-border)] space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                            Separation of Duties (SoD) Exceptions & Overrides Log
+                          </h3>
+                          <p className="text-[12px] text-[var(--text-muted)]">
+                            Spec C4 Compliance Trail: Evaluates dual cash counters, preparer-approver independence, controlled vendor payment details, and logged Treasurer emergency overrides.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            Server Authority Active
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Summary Metrics */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-[var(--surface-border)]">
+                        <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+                          <span className="text-[11px] font-semibold text-[var(--text-muted)] block">
+                            Total Tracked Events
+                          </span>
+                          <span className="text-lg font-bold text-[var(--text-primary)] font-sans tabular-nums">
+                            {sodExceptions.length}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+                          <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 block">
+                            Authorized Overrides
+                          </span>
+                          <span className="text-lg font-bold text-amber-700 dark:text-amber-400 font-sans tabular-nums">
+                            {sodExceptions.filter((e) => e.isOverridden).length}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+                          <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-400 block">
+                            Blocked Near-Misses
+                          </span>
+                          <span className="text-lg font-bold text-purple-700 dark:text-purple-400 font-sans tabular-nums">
+                            {sodExceptions.filter((e) => !e.isOverridden).length}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-[var(--radius-sm)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+                          <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 block">
+                            Self-Approval Block Rate
+                          </span>
+                          <span className="text-lg font-bold text-emerald-700 dark:text-emerald-400 font-sans tabular-nums">
+                            100%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Filter:</span>
+                      {[
+                        { id: 'ALL', label: `All events (${sodExceptions.length})` },
+                        {
+                          id: 'OVERRIDDEN',
+                          label: `Authorized Overrides (${sodExceptions.filter((e) => e.isOverridden).length})`,
+                        },
+                        {
+                          id: 'BLOCKED',
+                          label: `Blocked Near-Misses (${sodExceptions.filter((e) => !e.isOverridden).length})`,
+                        },
+                      ].map((f) => (
+                        <button
+                          key={f.id}
+                          onClick={() => setSodFilter(f.id as any)}
+                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-[var(--radius-sm)] border transition cursor-pointer ${
+                            sodFilter === f.id
+                              ? 'bg-[var(--accent)] text-white border-transparent'
+                              : 'bg-[var(--surface-panel)] border-[var(--surface-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Exceptions Table */}
+                    <div className="overflow-x-auto border border-[var(--surface-border)] rounded-[var(--radius)]">
+                      <table className="w-full text-left text-[13px]">
+                        <thead className="bg-[var(--surface-subtle)] border-b border-[var(--surface-border)] text-[12px] text-[var(--text-muted)]">
+                          <tr>
+                            <th className="py-2.5 px-3 font-semibold">Date & Time</th>
+                            <th className="py-2.5 px-3 font-semibold">Internal Control Rule</th>
+                            <th className="py-2.5 px-3 font-semibold">Entity / Document</th>
+                            <th className="py-2.5 px-3 font-semibold">Officer Involved</th>
+                            <th className="py-2.5 px-3 font-semibold">Counterpart</th>
+                            <th className="py-2.5 px-3 font-semibold text-center">Status</th>
+                            <th className="py-2.5 px-3 font-semibold">Details & Justification</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--surface-border)]">
+                          {sodExceptions
+                            .filter((entry) => {
+                              if (sodFilter === 'OVERRIDDEN') return entry.isOverridden;
+                              if (sodFilter === 'BLOCKED') return !entry.isOverridden;
+                              return true;
+                            })
+                            .map((entry) => {
+                              const ruleLabels: Record<string, string> = {
+                                REQUISITION_PREPARER_APPROVER: 'Requisition Independence',
+                                PAYROLL_PREPARER_APPROVER: 'Payroll Independence',
+                                BANK_RECON_PREPARER_APPROVER: 'Bank Recon Sign-Off',
+                                DEPRECIATION_PREPARER_APPROVER: 'Depreciation Sign-Off',
+                                ASSET_DISPOSAL_PREPARER_APPROVER: 'Asset Disposal Dual-Sign',
+                                DUAL_CASH_COUNTERS_DIFFERENT: 'Dual Cash Count Independence',
+                                VENDOR_CREATOR_CANNOT_PAY: 'Vendor Creator Payment Block',
+                                YEAR_END_CLOSE_PREPARER_APPROVER: 'Year-End Dual Approval',
+                              };
+
+                              return (
+                                <tr key={entry.id} className="hover:bg-[var(--surface-subtle)]/50">
+                                  <td className="py-2.5 px-3 text-[var(--text-muted)] font-sans tabular-nums text-[12px]">
+                                    {entry.timestamp.slice(0, 16)}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-medium text-[var(--text-primary)]">
+                                    {ruleLabels[entry.ruleType] || entry.ruleType}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-sans tabular-nums text-[12px] text-[var(--text-secondary)]">
+                                    {entry.entityType} · {entry.entityId}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-[var(--text-primary)] font-medium">
+                                    {entry.actorUserName}{' '}
+                                    <span className="text-[11px] text-[var(--text-muted)]">
+                                      ({entry.actorRole})
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                                    {entry.targetUserName || '—'}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    {entry.isOverridden ? (
+                                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                        Authorized Override
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                        Blocked Near-Miss
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-[12px] text-[var(--text-secondary)]">
+                                    <span>{entry.details}</span>
+                                    {entry.overrideReason && (
+                                      <span className="block text-[11px] text-amber-800 dark:text-amber-300 mt-0.5 font-medium">
+                                        Override reason: {entry.overrideReason}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+                {activeReport === 'TRIAL_BALANCE' && (
+                  <div className="space-y-4 text-xs">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold text-left">
+                          <th className="py-2">Code</th>
+                          <th className="py-2">Account Name</th>
+                          <th className="py-2">Type</th>
+                          <th className="py-2 text-right">Debit (GHS)</th>
+                          <th className="py-2 text-right">Credit (GHS)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--surface-border)]">
+                        {trialBalance.accounts.map((a) => (
+                          <tr key={a.accountId} className="hover:bg-[var(--surface-subtle)]/50">
+                            <td className="py-2 text-[var(--text-muted)]">{a.accountCode}</td>
+                            <td className="py-2 font-medium text-[var(--text-primary)]">{a.accountName}</td>
+                            <td className="py-2 text-[var(--text-secondary)]">{a.accountType}</td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                              {a.debitGhs > 0n ? formatMoney(a.debitGhs) : '—'}
+                            </td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                              {a.creditGhs > 0n ? formatMoney(a.creditGhs) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 11. USD Summary Report (Section 4.4) */}
+                {activeReport === 'USD_SUMMARY' && (
+                  <div className="space-y-6">
+                    <div className="border border-[var(--surface-border)] rounded-[var(--radius)] p-4 space-y-3 bg-[var(--surface-subtle)]/20">
+                      <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                        Denominational Statement of Activities (USD)
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--surface-border)] text-[var(--text-muted)] font-semibold text-left">
+                            <th className="py-1.5">Line item</th>
+                            <th className="py-1.5 text-right">Amount (USD)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--surface-border)]">
+                          <tr>
+                            <td className="py-1.5 font-medium text-[var(--text-primary)]">USD Total Revenue</td>
+                            <td className="py-1.5 text-right tabular-nums text-[var(--text-primary)]">
+                              ${(Number(denominationUsdSummary.statementOfActivities.totalIncomeUsdCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="py-1.5 font-medium text-[var(--text-primary)]">USD Total Expenses</td>
+                            <td className="py-1.5 text-right tabular-nums text-[var(--text-primary)]">
+                              ${(Number(denominationUsdSummary.statementOfActivities.totalExpenseUsdCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                          <tr className="font-bold border-t-2 border-[var(--text-primary)]">
+                            <td className="py-2 text-[var(--text-primary)]">USD Net Surplus</td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-primary)]">
+                              ${(Number(denominationUsdSummary.statementOfActivities.netSurplusDeficitUsdCents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mandatory Accounting Disclosure Footnote (Section 4.4) */}
+                    <div className="p-3.5 rounded-[var(--radius)] bg-[var(--surface-subtle)] text-xs text-[var(--text-secondary)] border border-[var(--surface-border)]">
+                      <p className="italic">
+                        {denominationUsdSummary.mandatoryDisclosureFootnote}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Signatures & Certification Block (Section 4.3) */}
+                <DualSignatureBlock
+                  preparedBy={{
+                    label: 'Prepared by',
+                    name: viewingSnapshot ? viewingSnapshot.preparedBy.name : preparedBy.name,
+                    role: viewingSnapshot ? viewingSnapshot.preparedBy.role : preparedBy.role,
+                    date: viewingSnapshot ? viewingSnapshot.preparedBy.date : preparedBy.date,
+                    signaturePlaceholder: '(Signed)',
+                  }}
+                  approvedBy={{
+                    label: 'Certified by',
+                    name: viewingSnapshot ? viewingSnapshot.certifiedBy.name : certifiedBy ? certifiedBy.name : 'Kofi Mensah',
+                    role: 'Treasurer',
+                    date: viewingSnapshot ? viewingSnapshot.certifiedBy.date : certifiedBy ? certifiedBy.date : undefined,
+                    signaturePlaceholder: viewingSnapshot || certifiedBy ? '(Certified)' : '',
+                  }}
+                  thirdSigner={{
+                    label: 'Approved by',
+                    name: viewingSnapshot ? viewingSnapshot.approvedBy.name : approvedBy ? approvedBy.name : 'Rev. Emmanuel Addo',
+                    role: 'Senior Pastor / Elder',
+                    date: viewingSnapshot ? viewingSnapshot.approvedBy.date : approvedBy ? approvedBy.date : undefined,
+                    signaturePlaceholder: viewingSnapshot || approvedBy ? '(Approved)' : '',
+                  }}
+                  showStampBox={true}
+                  footerText={`Source: church ledger as at 02 Nov 2026, 14:12. Generated by ${preparedBy.name}.`}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

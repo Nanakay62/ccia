@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useGiving } from '../../context/GivingContext.js';
+import React, { useState, useMemo } from 'react';
+import { useGiving, getMemberDisplayName } from '../../context/GivingContext.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { useLedger } from '../../context/LedgerContext.js';
 import {
@@ -12,53 +12,218 @@ import {
   type PaymentMethod,
   type Currency,
   type Member,
+  type MemberGivingRecord,
+  type Pledge,
 } from '@church/domain';
 import { PrintableReceiptModal } from './PrintableReceiptModal.js';
 import { MemberStatementModal } from './MemberStatementModal.js';
+import { SlideOverPanel } from '../ui/SlideOverPanel.js';
+import { FinancialYearSelector } from '../ui/FinancialYearSelector.js';
 import { EmptyState } from '../ui/EmptyState.js';
 import { useModalEscape } from '../../utils/useModalEscape.js';
+import { formatDate, formatMoneyAmount, defaultChurchSettings } from '../../config/churchSettings.js';
+import { logAuditEvent } from '../../utils/auditLogger.js';
+import { useSecurityEvents } from '../../context/SecurityEventsContext.js';
+import { useRouter } from '../../context/RouterContext.js';
 import {
-  Users,
   Search,
-  UserPlus,
   Plus,
-  ShieldCheck,
-  ShieldAlert,
-  Receipt,
+  Lock,
+  Download,
+  Upload,
   Printer,
   X,
-  Target,
-  Building,
-  FileText,
+  AlertTriangle,
+  ChevronRight,
+  UserCheck,
 } from 'lucide-react';
 
 export const GivingDirectoryView: React.FC = () => {
   const { currentUser } = useAuth();
+  const { navigate } = useRouter();
   const { funds } = useLedger();
   const {
     members,
     pledges,
     givingRecords,
     addMember,
+    updateMember,
     recordGiving,
+    reverseGivingRecord,
     recordPledge,
     getMaskedGivingRecords,
     getMaskedPledges,
   } = useGiving();
 
   const isPrivileged = canViewIndividualGiving(currentUser.role);
-  const maskedGivingList = getMaskedGivingRecords();
-  const maskedPledgesList = getMaskedPledges();
+  const isTreasurerOrFinSec =
+    currentUser.role === 'Treasurer' || currentUser.role === 'Finance Secretary';
 
-  const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'GIVING_ENTRY' | 'PLEDGES'>('DIRECTORY');
+  // Active tab: 'MEMBERS' | 'GIVING' | 'PLEDGES'
+  const [activeTab, setActiveTab] = useState<'MEMBERS' | 'GIVING' | 'PLEDGES'>('MEMBERS');
 
-  // Search filter
+  // --- MEMBERS TAB STATE ---
   const [searchTerm, setSearchTerm] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [familyFilter, setFamilyFilter] = useState('ALL');
+  const [showEnvelopeColumn, setShowEnvelopeColumn] = useState(false);
+  const [memberPage, setMemberPage] = useState(1);
+  const PAGE_SIZE = 50;
 
-  // Member Statement Modal State
+  // Masked phone reveals (logged when clicked)
+  const [revealedPhones, setRevealedPhones] = useState<Set<string>>(new Set());
+
+  // Member Detail Slide-Over Drawer
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const selectedMember = useMemo(
+    () => members.find((m) => m.id === selectedMemberId) || null,
+    [members, selectedMemberId]
+  );
+  const isDrawerOpen = Boolean(selectedMemberId);
+
+  // Modals
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const [isEditMemberOpen, setIsEditMemberOpen] = useState(false);
+  const [isImportCsvOpen, setIsImportCsvOpen] = useState(false);
+  const [isRecordGivingOpen, setIsRecordGivingOpen] = useState(false);
+  const [isAddPledgeOpen, setIsAddPledgeOpen] = useState(false);
+  const [isReversalModalOpen, setIsReversalModalOpen] = useState(false);
+  const [reversalTargetRecord, setReversalTargetRecord] = useState<MemberGivingRecord | null>(null);
+  const [reversalReason, setReversalReason] = useState('');
+
+  // Printable modals
+  const [activeReceipt, setActiveReceipt] = useState<PrintableReceipt | null>(null);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [selectedStatement, setSelectedStatement] = useState<MemberGivingStatement | null>(null);
   const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
 
+  // Security & Export Logging (Spec C6)
+  const { logSecurityEvent } = useSecurityEvents();
+  const [isExportPurposeOpen, setIsExportPurposeOpen] = useState(false);
+  const [exportTargetType, setExportTargetType] = useState<'MEMBERS' | 'GIVING' | 'PLEDGES'>('MEMBERS');
+  const [exportPurposeInput, setExportPurposeInput] = useState('Annual church audit preparation');
+
+  // Forms state
+  const [newTitle, setNewTitle] = useState('Brother');
+  const [newFirstName, setNewFirstName] = useState('');
+  const [newLastName, setNewLastName] = useState('');
+  const [newEnvelopeNo, setNewEnvelopeNo] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newFamily, setNewFamily] = useState('');
+  const [newDept, setNewDept] = useState('Men Fellowship');
+  const [newStatus, setNewStatus] = useState<'ACTIVE' | 'INACTIVE' | 'TRANSFERRED' | 'DECEASED'>('ACTIVE');
+
+  // Edit member form state
+  const [editTitle, setEditTitle] = useState('');
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editEnvelopeNo, setEditEnvelopeNo] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editFamily, setEditFamily] = useState('');
+  const [editDept, setEditDept] = useState('');
+  const [editStatus, setEditStatus] = useState<Member['status']>('ACTIVE');
+
+  // Record Giving form state
+  const [givingTargetMemberId, setGivingTargetMemberId] = useState<string>('mem-001');
+  const [givingFundId, setGivingFundId] = useState<string>('fund-gen');
+  const [givingCategory, setGivingCategory] = useState<GivingCategory>('Tithe');
+  const [givingMethod, setGivingMethod] = useState<PaymentMethod>('CASH');
+  const [givingCurrency] = useState<Currency>('GHS');
+  const [givingAmount, setGivingAmount] = useState<string>('150.00');
+  const [givingNotes, setGivingNotes] = useState<string>('');
+
+  // Record Pledge form state
+  const [pledgeTargetMemberId, setPledgeTargetMemberId] = useState<string>('mem-001');
+  const [pledgeCampaign, setPledgeCampaign] = useState('Auditorium Expansion Project 2026');
+  const [pledgeTargetAmtGhs, setPledgeTargetAmtGhs] = useState('5000.00');
+
+  // Giving tab filters
+  const [givingSearchTerm, setGivingSearchTerm] = useState('');
+  const [givingFundFilter, setGivingFundFilter] = useState('ALL');
+  const [givingCategoryFilter, setGivingCategoryFilter] = useState('ALL');
+  const [givingMethodFilter, setGivingMethodFilter] = useState('ALL');
+
+  // Pledges tab filters
+  const [pledgeSearchTerm, setPledgeSearchTerm] = useState('');
+
+  // CSV Import state
+  const [importCsvText, setImportCsvText] = useState('');
+  const [importFeedback, setImportFeedback] = useState<string | null>(null);
+
+  // Esc listeners
+  useModalEscape(isAddMemberOpen, () => setIsAddMemberOpen(false));
+  useModalEscape(isEditMemberOpen, () => setIsEditMemberOpen(false));
+  useModalEscape(isImportCsvOpen, () => setIsImportCsvOpen(false));
+  useModalEscape(isRecordGivingOpen, () => setIsRecordGivingOpen(false));
+  useModalEscape(isAddPledgeOpen, () => setIsAddPledgeOpen(false));
+  useModalEscape(isReversalModalOpen, () => setIsReversalModalOpen(false));
+
+  // Dynamic list of family groups
+  const familyGroups = useMemo(() => {
+    const set = new Set<string>();
+    members.forEach((m) => {
+      if (m.familyGroup && m.familyGroup.trim()) {
+        set.add(m.familyGroup.trim());
+      }
+    });
+    return Array.from(set).sort();
+  }, [members]);
+
+  // Map member ID to latest gift date
+  const memberLastGiftMap = useMemo(() => {
+    const map = new Map<string, string>();
+    givingRecords.forEach((r) => {
+      if (r.memberId && !r.isReversed) {
+        const existing = map.get(r.memberId);
+        if (!existing || r.serviceDate > existing) {
+          map.set(r.memberId, r.serviceDate);
+        }
+      }
+    });
+    return map;
+  }, [givingRecords]);
+
+  // Duplicate member warning when adding
+  const duplicateWarning = useMemo(() => {
+    if (!isAddMemberOpen) return null;
+    const cleanPhone = newPhone.replace(/\D/g, '');
+    const cleanFirst = newFirstName.trim().toLowerCase();
+    const cleanLast = newLastName.trim().toLowerCase();
+    const combinedName = `${cleanFirst} ${cleanLast}`.trim();
+
+    for (const m of members) {
+      if (cleanPhone.length >= 7 && m.phone) {
+        const mClean = m.phone.replace(/\D/g, '');
+        if (mClean.length >= 7 && (mClean.endsWith(cleanPhone) || cleanPhone.endsWith(mClean))) {
+          return `A member with phone ${m.phone} already exists: ${getMemberDisplayName(m)} (${m.memberNumber})`;
+        }
+      }
+      if (combinedName && m.fullName.toLowerCase() === combinedName) {
+        return `A member named "${m.fullName}" already exists (${m.memberNumber})`;
+      }
+    }
+    return null;
+  }, [isAddMemberOpen, newPhone, newFirstName, newLastName, members]);
+
+  // Reveal phone handler
+  const handleRevealPhone = (member: Member) => {
+    setRevealedPhones((prev) => new Set(prev).add(member.id));
+    logAuditEvent({
+      action: 'VIEW_PII',
+      record: `Member ${member.memberNumber}`,
+      entityType: 'MEMBER',
+      entityId: member.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Revealed phone number for ${getMemberDisplayName(member)} (${member.memberNumber})`,
+    });
+  };
+
+  // Open member statement
   const handleOpenMemberStatement = (member: Member) => {
     const statement = generateMemberGivingStatement({
       member,
@@ -69,88 +234,310 @@ export const GivingDirectoryView: React.FC = () => {
       requestingRole: currentUser.role,
       certifyingOfficer: currentUser.fullName,
       certifyingOfficerRole: currentUser.role,
-      churchName: 'Accra Community Church',
-      branchName: 'Main Sanctuary (Accra)',
+      churchName: defaultChurchSettings.churchName,
+      branchName: defaultChurchSettings.branchName,
     });
+
+    logAuditEvent({
+      action: 'PRINT_STATEMENT',
+      record: statement.statementNumber,
+      entityType: 'MEMBER_STATEMENT',
+      entityId: member.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Generated contribution statement for ${getMemberDisplayName(member)} (${member.memberNumber})`,
+    });
+
     setSelectedStatement(statement);
     setIsStatementModalOpen(true);
   };
 
-  // Add Member Modal State
-  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
-  const [newMemberName, setNewMemberName] = useState('');
-  const [newEnvelopeNo, setNewEnvelopeNo] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newFamily, setNewFamily] = useState('');
-  const [newDept, setNewDept] = useState('Men Fellowship');
+  // Filtered members list
+  const filteredMembers = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return members.filter((m) => {
+      // Search matches on pure name without title, or member number, envelope, or family
+      const matchesSearch =
+        !q ||
+        m.fullName.toLowerCase().includes(q) ||
+        m.memberNumber.toLowerCase().includes(q) ||
+        (m.envelopeNumber && m.envelopeNumber.toLowerCase().includes(q)) ||
+        (m.familyGroup && m.familyGroup.toLowerCase().includes(q));
 
-  useModalEscape(isAddMemberOpen, () => setIsAddMemberOpen(false));
+      const matchesDept = departmentFilter === 'ALL' || m.department === departmentFilter;
+      const matchesStatus = statusFilter === 'ALL' || m.status === statusFilter;
+      const matchesFamily = familyFilter === 'ALL' || m.familyGroup === familyFilter;
 
-  // New Giving Entry Form State
-  const [selectedMemberId, setSelectedMemberId] = useState<string>('mem-001');
-  const [givingFundId, setGivingFundId] = useState<string>('fund-gen');
-  const [givingCategory, setGivingCategory] = useState<GivingCategory>('Tithe');
-  const [givingMethod, setGivingMethod] = useState<PaymentMethod>('CASH');
-  const [givingCurrency, setGivingCurrency] = useState<Currency>('GHS');
-  const [givingAmount, setGivingAmount] = useState<string>('150.00');
-  const [givingNotes, setGivingNotes] = useState<string>('');
+      return matchesSearch && matchesDept && matchesStatus && matchesFamily;
+    });
+  }, [members, searchTerm, departmentFilter, statusFilter, familyFilter]);
 
-  // Receipt Modal State
-  const [activeReceipt, setActiveReceipt] = useState<PrintableReceipt | null>(null);
-  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  // Paginated members
+  const paginatedMembers = useMemo(() => {
+    const start = (memberPage - 1) * PAGE_SIZE;
+    return filteredMembers.slice(start, start + PAGE_SIZE);
+  }, [filteredMembers, memberPage]);
 
-  // Add Pledge Modal State
-  const [isAddPledgeOpen, setIsAddPledgeOpen] = useState(false);
-  const [pledgeMemberId, setPledgeMemberId] = useState('mem-001');
-  const [pledgeCampaign, setPledgeCampaign] = useState('Auditorium Roofing 2026');
-  const [pledgeTargetAmtGhs, setPledgeTargetAmtGhs] = useState('5000.00');
+  // Export CSV with Purpose Prompts & Anti-Tampering Audit Trail (Spec C6)
+  const handleOpenExportModal = (target: 'MEMBERS' | 'GIVING' | 'PLEDGES') => {
+    setExportTargetType(target);
+    setIsExportPurposeOpen(true);
+  };
 
-  useModalEscape(isAddPledgeOpen, () => setIsAddPledgeOpen(false));
+  const handleConfirmExport = () => {
+    const purpose = exportPurposeInput.trim() || 'Church governance review';
+    if (exportTargetType === 'MEMBERS') {
+      executeExportMembersCsv(purpose);
+    } else if (exportTargetType === 'GIVING') {
+      executeExportGivingCsv(purpose);
+    } else {
+      executeExportPledgesCsv(purpose);
+    }
+    setIsExportPurposeOpen(false);
+  };
 
-  // Filtered members
-  const filteredMembers = members.filter((m) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      m.fullName.toLowerCase().includes(q) ||
-      m.memberNumber.toLowerCase().includes(q) ||
-      (m.envelopeNumber && m.envelopeNumber.toLowerCase().includes(q)) ||
-      (m.familyGroup && m.familyGroup.toLowerCase().includes(q))
-    );
-  });
+  const executeExportMembersCsv = (purpose: string) => {
+    const headers = [
+      'Member Number',
+      'Title',
+      'Full Name',
+      'Envelope Number',
+      'Family Group',
+      'Department',
+      'Phone',
+      'Email',
+      'Status',
+      'Join Date',
+    ];
+    const rows = filteredMembers.map((m) => [
+      m.memberNumber,
+      m.title || '',
+      m.fullName,
+      m.envelopeNumber || '',
+      m.familyGroup || '',
+      m.department || '',
+      m.phone || '',
+      m.email || '',
+      m.status,
+      m.joinDate || '',
+    ]);
 
-  // Handle Add Member
-  const handleAddMember = (e: React.FormEvent) => {
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.map((x) => `"${x}"`).join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `church_members_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    logAuditEvent({
+      action: 'EXPORT',
+      record: 'Members Directory',
+      entityType: 'MEMBER_DIRECTORY',
+      entityId: 'all',
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Exported member directory (${filteredMembers.length} records). Purpose: ${purpose}`,
+    });
+
+    logSecurityEvent({
+      eventType: 'GIVING_DATA_EXPORTED',
+      description: `Exported member directory (${filteredMembers.length} records). Purpose: ${purpose}`,
+      metadata: { count: filteredMembers.length, purpose },
+    });
+  };
+
+  const executeExportGivingCsv = (purpose: string) => {
+    const headers = ['Receipt No', 'Date', 'Member', 'Category', 'Fund', 'Amount (GHS)', 'Payment Method'];
+    const rows = filteredGivingRecords.map((r) => [
+      r.receiptNumber,
+      r.serviceDate,
+      r.memberName,
+      r.category,
+      r.fundName,
+      (Number(r.amountPesewas) / 100).toFixed(2),
+      r.paymentMethod,
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.map((x) => `"${x}"`).join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `giving_records_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    logAuditEvent({
+      action: 'EXPORT',
+      record: 'Giving Records',
+      entityType: 'GIVING_RECORDS',
+      entityId: 'all',
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Exported confidential giving records (${filteredGivingRecords.length} records). Purpose: ${purpose}`,
+    });
+
+    logSecurityEvent({
+      eventType: 'GIVING_DATA_EXPORTED',
+      description: `Exported confidential giving records (${filteredGivingRecords.length} records). Purpose: ${purpose}`,
+      metadata: { count: filteredGivingRecords.length, purpose },
+    });
+  };
+
+  const executeExportPledgesCsv = (purpose: string) => {
+    const headers = ['Campaign', 'Member', 'Target (GHS)', 'Fulfilled (GHS)', 'Balance (GHS)', 'Status'];
+    const rows = filteredPledges.map((p) => [
+      p.campaignName,
+      p.memberName,
+      (Number(p.targetAmountPesewas) / 100).toFixed(2),
+      (Number(p.paidAmountPesewas) / 100).toFixed(2),
+      (Number(p.targetAmountPesewas - p.paidAmountPesewas) / 100).toFixed(2),
+      p.status,
+    ]);
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.map((x) => `"${x}"`).join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `pledges_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    logAuditEvent({
+      action: 'EXPORT',
+      record: 'Pledges Register',
+      entityType: 'PLEDGES',
+      entityId: 'all',
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Exported pledges register (${filteredPledges.length} records). Purpose: ${purpose}`,
+    });
+
+    logSecurityEvent({
+      eventType: 'GIVING_DATA_EXPORTED',
+      description: `Exported pledges register (${filteredPledges.length} records). Purpose: ${purpose}`,
+      metadata: { count: filteredPledges.length, purpose },
+    });
+  };
+
+  // Handle Add Member submit
+  const handleAddMemberSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMemberName.trim()) {
-      alert('Please enter member full name.');
+    const cleanFirst = newFirstName.trim();
+    const cleanLast = newLastName.trim();
+    if (!cleanFirst && !cleanLast) {
+      alert('Please enter member name.');
       return;
     }
+    const cleanFull = `${cleanFirst} ${cleanLast}`.trim();
     const memNo = `MEM-${String(members.length + 1).padStart(3, '0')}`;
     const phoneClean = newPhone.trim();
     const phoneHint = phoneClean.length >= 3 ? phoneClean.slice(-3) : '000';
 
-    addMember({
+    const created = addMember({
       branchId: currentUser.branchId,
       memberNumber: memNo,
-      envelopeNumber: newEnvelopeNo.trim() ? `ENV-${newEnvelopeNo.trim()}` : undefined,
-      fullName: newMemberName.trim(),
+      envelopeNumber: newEnvelopeNo.trim() ? `ENV-${newEnvelopeNo.trim().replace(/^ENV-/, '')}` : undefined,
+      title: newTitle || undefined,
+      firstName: cleanFirst || undefined,
+      lastName: cleanLast || undefined,
+      fullName: cleanFull,
       phone: phoneClean || undefined,
       phoneHint,
+      email: newEmail.trim() || undefined,
       familyGroup: newFamily.trim() || undefined,
       department: newDept,
-      status: 'ACTIVE',
+      status: newStatus,
       joinDate: new Date().toISOString().slice(0, 10),
     });
 
-    setNewMemberName('');
+    logAuditEvent({
+      action: 'CREATE',
+      record: created.memberNumber,
+      entityType: 'MEMBER',
+      entityId: created.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Added new member ${getMemberDisplayName(created)} (${created.memberNumber})`,
+    });
+
+    setNewFirstName('');
+    setNewLastName('');
     setNewEnvelopeNo('');
     setNewPhone('');
+    setNewEmail('');
     setNewFamily('');
     setIsAddMemberOpen(false);
   };
 
-  // Handle Record Giving & Issue Receipt
-  const handleRecordGiving = (e: React.FormEvent) => {
+  // Open Edit Member modal
+  const handleOpenEditMember = (member: Member) => {
+    setEditTitle(member.title || 'Brother');
+    setEditFirstName(member.firstName || member.fullName.split(' ')[0] || '');
+    setEditLastName(member.lastName || member.fullName.split(' ').slice(1).join(' ') || '');
+    setEditEnvelopeNo(member.envelopeNumber ? member.envelopeNumber.replace(/^ENV-/, '') : '');
+    setEditPhone(member.phone || '');
+    setEditEmail(member.email || '');
+    setEditFamily(member.familyGroup || '');
+    setEditDept(member.department || 'Men Fellowship');
+    setEditStatus(member.status);
+    setIsEditMemberOpen(true);
+  };
+
+  // Handle Edit Member submit
+  const handleEditMemberSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMember) return;
+    const cleanFirst = editFirstName.trim();
+    const cleanLast = editLastName.trim();
+    const cleanFull = `${cleanFirst} ${cleanLast}`.trim();
+    const phoneClean = editPhone.trim();
+    const phoneHint = phoneClean.length >= 3 ? phoneClean.slice(-3) : '000';
+
+    updateMember(selectedMember.id, {
+      title: editTitle || undefined,
+      firstName: cleanFirst || undefined,
+      lastName: cleanLast || undefined,
+      fullName: cleanFull || selectedMember.fullName,
+      envelopeNumber: editEnvelopeNo.trim() ? `ENV-${editEnvelopeNo.trim()}` : undefined,
+      phone: phoneClean || undefined,
+      phoneHint,
+      email: editEmail.trim() || undefined,
+      familyGroup: editFamily.trim() || undefined,
+      department: editDept,
+      status: editStatus,
+    });
+
+    logAuditEvent({
+      action: 'UPDATE',
+      record: selectedMember.memberNumber,
+      entityType: 'MEMBER',
+      entityId: selectedMember.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Updated details for ${getMemberDisplayName(selectedMember)} (${selectedMember.memberNumber})`,
+    });
+
+    setIsEditMemberOpen(false);
+  };
+
+  // Handle Record Giving submit
+  const handleRecordGivingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(givingAmount);
     if (isNaN(amt) || amt <= 0) {
@@ -158,13 +545,13 @@ export const GivingDirectoryView: React.FC = () => {
       return;
     }
 
-    const member = members.find((m) => m.id === selectedMemberId);
+    const member = members.find((m) => m.id === givingTargetMemberId);
     const fund = funds.find((f) => f.id === givingFundId);
 
     const record = recordGiving({
       branchId: currentUser.branchId,
       memberId: member?.id,
-      memberName: member?.fullName || 'Anonymous Congregation Member',
+      memberName: member ? getMemberDisplayName(member) : 'Anonymous Member',
       memberNumber: member?.memberNumber,
       envelopeNumber: member?.envelopeNumber,
       serviceDate: new Date().toISOString().slice(0, 10),
@@ -177,7 +564,17 @@ export const GivingDirectoryView: React.FC = () => {
       notes: givingNotes.trim() || undefined,
     });
 
-    // Generate Printable Receipt
+    logAuditEvent({
+      action: 'CREATE',
+      record: record.receiptNumber,
+      entityType: 'MEMBER_GIVING',
+      entityId: record.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Recorded gift of GHS ${amt.toFixed(2)} (${givingCategory}) for ${record.memberName}`,
+    });
+
     const printable = generatePrintableReceipt({
       record,
       receivingOfficer: currentUser.fullName,
@@ -186,22 +583,50 @@ export const GivingDirectoryView: React.FC = () => {
 
     setActiveReceipt(printable);
     setIsReceiptModalOpen(true);
+    setIsRecordGivingOpen(false);
     setGivingNotes('');
   };
 
-  // Handle Add Pledge
-  const handleAddPledge = (e: React.FormEvent) => {
+  // Handle Reversal submit
+  const handleReversalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reversalTargetRecord) return;
+    if (!reversalReason.trim()) {
+      alert('Please provide a reason for this reversal.');
+      return;
+    }
+
+    reverseGivingRecord(reversalTargetRecord.id, reversalReason.trim());
+
+    logAuditEvent({
+      action: 'REVERSAL',
+      record: reversalTargetRecord.receiptNumber,
+      entityType: 'MEMBER_GIVING',
+      entityId: reversalTargetRecord.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Reversed gift ${reversalTargetRecord.receiptNumber} (${reversalReason.trim()})`,
+    });
+
+    setIsReversalModalOpen(false);
+    setReversalTargetRecord(null);
+    setReversalReason('');
+  };
+
+  // Handle Add Pledge submit
+  const handleAddPledgeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const target = parseFloat(pledgeTargetAmtGhs);
     if (isNaN(target) || target <= 0) {
       alert('Please enter a valid target amount.');
       return;
     }
-    const member = members.find((m) => m.id === pledgeMemberId);
-    recordPledge({
+    const member = members.find((m) => m.id === pledgeTargetMemberId);
+    const pledge = recordPledge({
       branchId: currentUser.branchId,
-      memberId: pledgeMemberId,
-      memberName: member?.fullName || 'Anonymous Member',
+      memberId: pledgeTargetMemberId,
+      memberName: member ? getMemberDisplayName(member) : 'Anonymous Member',
       fundId: 'fund-bld',
       fundName: 'Building Fund',
       campaignName: pledgeCampaign.trim(),
@@ -210,605 +635,1304 @@ export const GivingDirectoryView: React.FC = () => {
       currency: 'GHS',
       targetAmountPesewas: BigInt(Math.round(target * 100)),
     });
+
+    logAuditEvent({
+      action: 'CREATE',
+      record: pledge.campaignName,
+      entityType: 'PLEDGE',
+      entityId: pledge.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      device: currentUser.deviceId,
+      details: `Recorded pledge of GHS ${target.toFixed(2)} for ${pledge.memberName}`,
+    });
+
     setIsAddPledgeOpen(false);
   };
 
-  // Print existing receipt handler
-  const handlePrintExistingReceipt = (record: typeof maskedGivingList[0]) => {
-    const printable = generatePrintableReceipt({
-      record,
-      receivingOfficer: currentUser.fullName,
-      receivingOfficerRole: currentUser.role,
-    });
-    setActiveReceipt(printable);
-    setIsReceiptModalOpen(true);
-  };
+  // Giving records filtered
+  const filteredGivingRecords = useMemo(() => {
+    const list = isPrivileged ? givingRecords : getMaskedGivingRecords();
+    const q = givingSearchTerm.trim().toLowerCase();
 
-  // Pledge aggregate calculations
-  const totalPledgedPesewas = maskedPledgesList.reduce((acc, p) => acc + p.targetAmountPesewas, 0n);
-  const totalPaidPesewas = maskedPledgesList.reduce((acc, p) => acc + p.paidAmountPesewas, 0n);
-  const pledgePercent = totalPledgedPesewas > 0n ? Number((totalPaidPesewas * 100n) / totalPledgedPesewas) : 0;
+    return list.filter((r) => {
+      const matchesSearch =
+        !q ||
+        r.memberName.toLowerCase().includes(q) ||
+        r.receiptNumber.toLowerCase().includes(q) ||
+        (r.memberNumber && r.memberNumber.toLowerCase().includes(q));
+
+      const matchesFund = givingFundFilter === 'ALL' || r.fundId === givingFundFilter;
+      const matchesCategory = givingCategoryFilter === 'ALL' || r.category === givingCategoryFilter;
+      const matchesMethod = givingMethodFilter === 'ALL' || r.paymentMethod === givingMethodFilter;
+
+      return matchesSearch && matchesFund && matchesCategory && matchesMethod;
+    });
+  }, [
+    isPrivileged,
+    givingRecords,
+    getMaskedGivingRecords,
+    givingSearchTerm,
+    givingFundFilter,
+    givingCategoryFilter,
+    givingMethodFilter,
+  ]);
+
+  // Pledges filtered
+  const filteredPledges = useMemo(() => {
+    const list = isPrivileged ? pledges : getMaskedPledges();
+    const q = pledgeSearchTerm.trim().toLowerCase();
+    return list.filter((p) => {
+      return !q || p.campaignName.toLowerCase().includes(q) || p.memberName.toLowerCase().includes(q);
+    });
+  }, [isPrivileged, pledges, getMaskedPledges, pledgeSearchTerm]);
+
+  // Pledges aggregates
+  const pledgeAggregates = useMemo(() => {
+    const totalPledged = pledges.reduce((acc, p) => acc + p.targetAmountPesewas, 0n);
+    const totalPaid = pledges.reduce((acc, p) => acc + p.paidAmountPesewas, 0n);
+    const totalOutstanding = totalPledged > totalPaid ? totalPledged - totalPaid : 0n;
+    return { totalPledged, totalPaid, totalOutstanding };
+  }, [pledges]);
+
+  // Drawer member's gifts and pledges
+  const drawerMemberGiving = useMemo(() => {
+    if (!selectedMember) return { records: [], totalYtd: 0n, byFund: [] as { fundName: string; amountPesewas: bigint }[], memberPledges: [] as Pledge[] };
+    const memberGifts = givingRecords.filter(
+      (r) => r.memberId === selectedMember.id && !r.isReversed
+    );
+    const totalYtd = memberGifts.reduce((acc, r) => acc + r.amountPesewas, 0n);
+
+    // Group by fund
+    const fundMap = new Map<string, bigint>();
+    memberGifts.forEach((r) => {
+      const cur = fundMap.get(r.fundName) || 0n;
+      fundMap.set(r.fundName, cur + r.amountPesewas);
+    });
+    const byFund = Array.from(fundMap.entries()).map(([fundName, amountPesewas]) => ({
+      fundName,
+      amountPesewas,
+    }));
+
+    const memberPledges = pledges.filter((p) => p.memberId === selectedMember.id);
+
+    return {
+      records: memberGifts.slice(0, 10),
+      totalYtd,
+      byFund,
+      memberPledges,
+    };
+  }, [selectedMember, givingRecords, pledges]);
+
+  // Household members of selected drawer member
+  const householdMembers = useMemo(() => {
+    if (!selectedMember || !selectedMember.familyGroup) return [];
+    return members.filter(
+      (m) => m.id !== selectedMember.id && m.familyGroup === selectedMember.familyGroup
+    );
+  }, [selectedMember, members]);
 
   return (
     <div className="space-y-6">
-      {/* Header & Role Privacy Gate Banner */}
-      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
-              <Users className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Member Directory & Giving Management
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Member envelopes, individual tithe records, pledges, and printable official receipts.
-              </p>
-            </div>
+      {/* 2.1 Header: Title "Members", Financial Year selector for statements & pledge campaigns (Spec A1) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[var(--surface-border)]">
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <h1 className="text-[22px] font-bold text-[var(--text-primary)] tracking-tight">Members</h1>
+            {!isPrivileged && (
+              <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] mt-1">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Giving amounts are hidden for your role.</span>
+              </div>
+            )}
           </div>
-
-          {/* Privacy Pill */}
-          <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
-              isPrivileged
-                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-            }`}
-          >
-            {isPrivileged ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <ShieldAlert className="w-4 h-4 text-amber-600" />}
-            <span>{isPrivileged ? 'Full Giving Records Authorized' : 'Confidentiality Rule Active (Masked)'}</span>
-          </div>
+          <FinancialYearSelector compact />
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        {/* Tab Navigation: Underline tabs (Rule A3) */}
+        <div className="flex items-center gap-6 border-b border-[var(--surface-border-subtle)] sm:border-b-0">
           <button
-            onClick={() => setActiveTab('DIRECTORY')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
-              activeTab === 'DIRECTORY'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            onClick={() => setActiveTab('MEMBERS')}
+            className={`pb-2.5 text-xs font-medium transition flex items-center gap-1.5 ${
+              activeTab === 'MEMBERS'
+                ? 'border-b-2 border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-b-2 border-transparent'
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span>Member Directory ({members.length})</span>
+            <span>Members</span>
+            <span className="text-[var(--text-muted)] font-normal text-[11px]">{members.length}</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('GIVING_ENTRY')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
-              activeTab === 'GIVING_ENTRY'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            onClick={() => setActiveTab('GIVING')}
+            className={`pb-2.5 text-xs font-medium transition flex items-center gap-1.5 ${
+              activeTab === 'GIVING'
+                ? 'border-b-2 border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-b-2 border-transparent'
             }`}
           >
-            <Receipt className="w-4 h-4" />
-            <span>Individual Tithes & Giving</span>
+            <span>Giving</span>
+            <span className="text-[var(--text-muted)] font-normal text-[11px]">{givingRecords.length}</span>
           </button>
 
           <button
             onClick={() => setActiveTab('PLEDGES')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`pb-2.5 text-xs font-medium transition flex items-center gap-1.5 ${
               activeTab === 'PLEDGES'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                ? 'border-b-2 border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-b-2 border-transparent'
             }`}
           >
-            <Target className="w-4 h-4" />
-            <span>Pledges & Special Campaigns ({maskedPledgesList.length})</span>
+            <span>Pledges and campaigns</span>
+            <span className="text-[var(--text-muted)] font-normal text-[11px]">{pledges.length}</span>
           </button>
         </div>
       </div>
 
-      {/* TAB 1: MEMBER DIRECTORY */}
-      {activeTab === 'DIRECTORY' && (
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+      {/* TAB 1: MEMBERS */}
+      {activeTab === 'MEMBERS' && (
+        <div className="space-y-4">
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+            <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+              <div className="relative min-w-[220px] max-w-[320px] flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setMemberPage(1);
+                  }}
+                  placeholder="Search by name, number, envelope..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] focus:bg-[var(--surface-panel)] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-hidden transition"
+                />
+              </div>
+
+              {/* Department Filter */}
+              <select
+                value={departmentFilter}
+                onChange={(e) => {
+                  setDepartmentFilter(e.target.value);
+                  setMemberPage(1);
+                }}
+                className="px-2.5 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+              >
+                <option value="ALL">All departments</option>
+                <option value="Men Fellowship">Men Fellowship</option>
+                <option value="Women Ministry">Women Ministry</option>
+                <option value="Choir">Choir</option>
+                <option value="Youth">Youth</option>
+                <option value="Ushers">Ushers</option>
+                <option value="Children Ministry">Children Ministry</option>
+                <option value="Deacon Board">Deacon Board</option>
+                <option value="Pastoral Council">Pastoral Council</option>
+                <option value="Media & IT">Media & IT</option>
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setMemberPage(1);
+                }}
+                className="px-2.5 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+              >
+                <option value="ALL">All statuses</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+                <option value="TRANSFERRED">Transferred</option>
+                <option value="DECEASED">Deceased</option>
+              </select>
+
+              {/* Family Filter */}
+              {familyGroups.length > 0 && (
+                <select
+                  value={familyFilter}
+                  onChange={(e) => {
+                    setFamilyFilter(e.target.value);
+                    setMemberPage(1);
+                  }}
+                  className="px-2.5 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                >
+                  <option value="ALL">All family groups</option>
+                  {familyGroups.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Envelope column toggle */}
+              <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none pl-1">
+                <input
+                  type="checkbox"
+                  checked={showEnvelopeColumn}
+                  onChange={(e) => setShowEnvelopeColumn(e.target.checked)}
+                  className="rounded border-[var(--surface-border)] text-[var(--accent)] focus:ring-0"
+                />
+                <span>Envelope no.</span>
+              </label>
+            </div>
+
+            {/* Actions: Primary Add member, Secondary Import, Export */}
+            <div className="flex items-center gap-2">
+              {isTreasurerOrFinSec && (
+                <>
+                  <button
+                    onClick={() => navigate('#/member-data-requests')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+                    title="Data subject requests & anonymisation under Ghana Data Protection Act"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Data privacy (Act 843)</span>
+                  </button>
+                  <button
+                    onClick={() => handleOpenExportModal('MEMBERS')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+                    title="Export member directory to CSV"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                    <span>Export</span>
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={() => setIsImportCsvOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+              >
+                <Upload className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                <span>Import CSV</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddMemberOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add member</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Members Table */}
+          <div className="rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)] overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-subtle)]/60 text-[var(--text-secondary)] font-medium">
+                    <th className="py-2.5 px-3 w-28">Member no.</th>
+                    <th className="py-2.5 px-3 min-w-[180px]">Name</th>
+                    {showEnvelopeColumn && <th className="py-2.5 px-3 w-28">Envelope no.</th>}
+                    <th className="py-2.5 px-3">Family group</th>
+                    <th className="py-2.5 px-3">Department</th>
+                    <th className="py-2.5 px-3 min-w-[160px]">Phone</th>
+                    <th className="py-2.5 px-3 text-right">Last gift</th>
+                    <th className="py-2.5 px-3 w-28 text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--surface-border-subtle)]">
+                  {paginatedMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={showEnvelopeColumn ? 8 : 7} className="py-12 text-center">
+                        <EmptyState
+                          message={
+                            searchTerm || departmentFilter !== 'ALL' || statusFilter !== 'ALL'
+                              ? 'No members match the current search or filter criteria.'
+                              : 'No members yet. Add a member or import a CSV.'
+                          }
+                          actionLabel="Add member"
+                          onAction={() => setIsAddMemberOpen(true)}
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedMembers.map((m) => {
+                      const isPhoneRevealed = revealedPhones.has(m.id);
+                      const lastGiftDate = memberLastGiftMap.get(m.id);
+                      const displayName = getMemberDisplayName(m);
+
+                      return (
+                        <tr
+                          key={m.id}
+                          onClick={() => {
+                            setSelectedMemberId(m.id);
+                            try {
+                              navigate(`#/members/${m.id}`, {
+                                listKey: 'members',
+                                listItemIds: members.map((x) => x.id),
+                              });
+                            } catch {}
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedMemberId(m.id);
+                              try {
+                                navigate(`#/members/${m.id}`, {
+                                  listKey: 'members',
+                                  listItemIds: members.map((x) => x.id),
+                                });
+                              } catch {}
+                            }
+                          }}
+                          tabIndex={0}
+                          className="hover:bg-[var(--surface-subtle)]/70 cursor-pointer transition select-none group"
+                        >
+                          {/* Member No (plain text, regular font, not blue monospace) */}
+                          <td className="py-2.5 px-3 font-normal text-[var(--text-secondary)]">
+                            {m.memberNumber}
+                          </td>
+
+                          {/* Name (with Title) */}
+                          <td className="py-2.5 px-3 font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)] transition">
+                            {displayName}
+                          </td>
+
+                          {/* Envelope No (optional) */}
+                          {showEnvelopeColumn && (
+                            <td className="py-2.5 px-3 text-[var(--text-secondary)] font-normal">
+                              {m.envelopeNumber || '—'}
+                            </td>
+                          )}
+
+                          {/* Family Group */}
+                          <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                            {m.familyGroup || '—'}
+                          </td>
+
+                          {/* Department */}
+                          <td className="py-2.5 px-3 text-[var(--text-secondary)]">
+                            {m.department || '—'}
+                          </td>
+
+                          {/* Phone: Masked with logged Show button */}
+                          <td
+                            className="py-2.5 px-3 text-[var(--text-secondary)]"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {m.phone ? (
+                              isPhoneRevealed ? (
+                                <span className="font-tabular text-[var(--text-primary)]">{m.phone}</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 font-tabular">
+                                  <span>{`+233 •• ••• •${m.phoneHint || m.phone.slice(-3)}`}</span>
+                                  {isPrivileged && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRevealPhone(m)}
+                                      className="text-[var(--accent)] hover:underline text-[11px] font-medium ml-1"
+                                      title="Reveal full phone number (logged in audit trail)"
+                                    >
+                                      Show
+                                    </button>
+                                  )}
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[var(--text-muted)]">—</span>
+                            )}
+                          </td>
+
+                          {/* Last Gift Date */}
+                          <td className="py-2.5 px-3 text-right font-tabular text-[var(--text-secondary)]">
+                            {lastGiftDate ? formatDate(lastGiftDate) : '—'}
+                          </td>
+
+                          {/* Status: Tag shown ONLY when NOT Active (Rule 2.2) */}
+                          <td className="py-2.5 px-3 text-center">
+                            {m.status === 'INACTIVE' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                Inactive
+                              </span>
+                            )}
+                            {m.status === 'TRANSFERRED' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                Transferred
+                              </span>
+                            )}
+                            {m.status === 'DECEASED' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                Deceased
+                              </span>
+                            )}
+                            {/* Active rows display nothing here - no green pill */}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paging controls */}
+            {filteredMembers.length > 0 && (
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-[var(--surface-border)] bg-[var(--surface-subtle)]/40 text-xs text-[var(--text-secondary)]">
+                <div>
+                  Showing {Math.min((memberPage - 1) * PAGE_SIZE + 1, filteredMembers.length)}–
+                  {Math.min(memberPage * PAGE_SIZE, filteredMembers.length)} of {filteredMembers.length}{' '}
+                  members
+                </div>
+                {filteredMembers.length > PAGE_SIZE && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setMemberPage((p) => Math.max(p - 1, 1))}
+                      disabled={memberPage === 1}
+                      className="px-2.5 py-1 rounded border border-[var(--surface-border)] disabled:opacity-40 hover:bg-[var(--surface-subtle)] text-xs"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-2 text-xs text-[var(--text-muted)]">
+                      Page {memberPage} of {Math.ceil(filteredMembers.length / PAGE_SIZE)}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setMemberPage((p) =>
+                          p < Math.ceil(filteredMembers.length / PAGE_SIZE) ? p + 1 : p
+                        )
+                      }
+                      disabled={memberPage >= Math.ceil(filteredMembers.length / PAGE_SIZE)}
+                      className="px-2.5 py-1 rounded border border-[var(--surface-border)] disabled:opacity-40 hover:bg-[var(--surface-subtle)] text-xs"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: GIVING */}
+      {activeTab === 'GIVING' && (
+        <div className="space-y-4">
+          {/* Giving Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+            <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+              <div className="relative min-w-[220px] max-w-[320px] flex-1">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  value={givingSearchTerm}
+                  onChange={(e) => setGivingSearchTerm(e.target.value)}
+                  placeholder="Search donor name, receipt no..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] focus:bg-[var(--surface-panel)] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-hidden transition"
+                />
+              </div>
+
+              {/* Fund filter */}
+              <select
+                value={givingFundFilter}
+                onChange={(e) => setGivingFundFilter(e.target.value)}
+                className="px-2.5 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+              >
+                <option value="ALL">All funds</option>
+                {funds.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Category filter */}
+              <select
+                value={givingCategoryFilter}
+                onChange={(e) => setGivingCategoryFilter(e.target.value)}
+                className="px-2.5 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+              >
+                <option value="ALL">All categories</option>
+                <option value="Tithe">Tithe</option>
+                <option value="General Offering">General Offering</option>
+                <option value="Building Pledge">Building Pledge</option>
+                <option value="Missions">Missions</option>
+                <option value="Welfare">Welfare</option>
+                <option value="Other Donation">Other Donation</option>
+              </select>
+
+              {/* Method filter */}
+              <select
+                value={givingMethodFilter}
+                onChange={(e) => setGivingMethodFilter(e.target.value)}
+                className="px-2.5 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+              >
+                <option value="ALL">All methods</option>
+                <option value="CASH">Cash</option>
+                <option value="MOMO">Mobile Money</option>
+                <option value="CHEQUE">Cheque</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+              </select>
+            </div>
+
+            {/* Primary Action */}
+            <button
+              onClick={() => {
+                setGivingTargetMemberId(members[0]?.id || 'mem-001');
+                setIsRecordGivingOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Record giving</span>
+            </button>
+          </div>
+
+          {/* Giving Records Table */}
+          <div className="rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)] overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-subtle)]/60 text-[var(--text-secondary)] font-medium">
+                    <th className="py-2.5 px-3 w-28">Date</th>
+                    <th className="py-2.5 px-3 min-w-[180px]">Member / Donor</th>
+                    <th className="py-2.5 px-3">Fund</th>
+                    <th className="py-2.5 px-3">Category</th>
+                    <th className="py-2.5 px-3">Method</th>
+                    <th className="py-2.5 px-3 text-right">Amount (GHS)</th>
+                    <th className="py-2.5 px-3">Receipt no.</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--surface-border-subtle)]">
+                  {filteredGivingRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-[var(--text-muted)]">
+                        No giving records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredGivingRecords.map((r) => (
+                      <tr
+                        key={r.id}
+                        className={`hover:bg-[var(--surface-subtle)]/60 transition ${
+                          r.isReversed ? 'opacity-60 bg-[var(--surface-subtle)]/20' : ''
+                        }`}
+                      >
+                        <td className="py-2.5 px-3 font-tabular text-[var(--text-secondary)]">
+                          {formatDate(r.serviceDate)}
+                        </td>
+                        <td className="py-2.5 px-3 font-medium text-[var(--text-primary)]">
+                          {r.memberName}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">{r.fundName}</td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">{r.category}</td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)]">{r.paymentMethod}</td>
+                        <td className="py-2.5 px-3 text-right font-tabular text-[var(--text-primary)] font-medium">
+                          {formatMoneyAmount(r.amountPesewas)}
+                        </td>
+                        <td className="py-2.5 px-3 text-[var(--text-secondary)] font-tabular">
+                          {r.receiptNumber}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {r.isReversed ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400 font-medium"
+                              title={`Reversed: ${r.reversalReason || 'No reason provided'}`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              Reversed
+                            </span>
+                          ) : (
+                            <span className="text-[var(--text-muted)]">—</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                const printable = generatePrintableReceipt({
+                                  record: r,
+                                  receivingOfficer: currentUser.fullName,
+                                  receivingOfficerRole: currentUser.role,
+                                });
+                                setActiveReceipt(printable);
+                                setIsReceiptModalOpen(true);
+                              }}
+                              className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+                              title="Print receipt"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                            {!r.isReversed && isTreasurerOrFinSec && (
+                              <button
+                                onClick={() => {
+                                  setReversalTargetRecord(r);
+                                  setReversalReason('');
+                                  setIsReversalModalOpen(true);
+                                }}
+                                className="text-xs text-[var(--text-muted)] hover:text-rose-600 px-1 py-0.5 rounded transition"
+                                title="Reverse this giving entry (corrections must be reversals)"
+                              >
+                                Reverse
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: PLEDGES AND CAMPAIGNS */}
+      {activeTab === 'PLEDGES' && (
+        <div className="space-y-4">
+          {/* Campaign summary strip */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+            <div className="space-y-0.5">
+              <span className="text-xs text-[var(--text-muted)]">Total Pledged</span>
+              <div className="text-base font-semibold font-tabular text-[var(--text-primary)]">
+                GHS {formatMoneyAmount(pledgeAggregates.totalPledged)}
+              </div>
+            </div>
+            <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-[var(--surface-border)] pt-2 sm:pt-0 sm:pl-4">
+              <span className="text-xs text-[var(--text-muted)]">Total Paid</span>
+              <div className="text-base font-semibold font-tabular text-[var(--text-primary)]">
+                GHS {formatMoneyAmount(pledgeAggregates.totalPaid)}
+              </div>
+            </div>
+            <div className="space-y-0.5 border-t sm:border-t-0 sm:border-l border-[var(--surface-border)] pt-2 sm:pt-0 sm:pl-4">
+              <span className="text-xs text-[var(--text-muted)]">Total Outstanding</span>
+              <div className="text-base font-semibold font-tabular text-[var(--text-primary)]">
+                GHS {formatMoneyAmount(pledgeAggregates.totalOutstanding)}
+              </div>
+            </div>
+          </div>
+
+          {/* Pledges Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)]">
+            <div className="relative min-w-[220px] max-w-[320px] flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input
                 type="text"
-                placeholder="Search by name, member #, envelope #, or family group..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full text-xs pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                value={pledgeSearchTerm}
+                onChange={(e) => setPledgeSearchTerm(e.target.value)}
+                placeholder="Search campaign or member..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-[var(--radius)] text-xs border border-[var(--surface-border)] bg-[var(--surface-subtle)] focus:bg-[var(--surface-panel)] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-hidden transition"
               />
             </div>
 
             <button
-              onClick={() => setIsAddMemberOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-sm transition"
+              onClick={() => {
+                setPledgeTargetMemberId(members[0]?.id || 'mem-001');
+                setIsAddPledgeOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
             >
-              <UserPlus className="w-4 h-4" />
-              <span>Add Member</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Record pledge</span>
             </button>
           </div>
 
-          {filteredMembers.length === 0 ? (
-            <EmptyState
-              message="No members found matching your search criteria."
-              actionLabel="Add New Member"
-              onAction={() => setIsAddMemberOpen(true)}
-            />
-          ) : (
+          {/* Pledges DataTable */}
+          <div className="rounded-[var(--radius)] bg-[var(--surface-panel)] border border-[var(--surface-border)] overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  <tr>
-                    <th className="p-2.5">Member No.</th>
-                    <th className="p-2.5">Envelope No.</th>
-                    <th className="p-2.5">Full Name</th>
-                    <th className="p-2.5">Family Group</th>
-                    <th className="p-2.5">Department</th>
-                    <th className="p-2.5">Phone (Encrypted)</th>
-                    <th className="p-2.5 text-center">Status</th>
-                    <th className="p-2.5 text-right">Statement</th>
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-subtle)]/60 text-[var(--text-secondary)] font-medium">
+                    <th className="py-2.5 px-3 min-w-[180px]">Campaign</th>
+                    <th className="py-2.5 px-3 min-w-[160px]">Member</th>
+                    <th className="py-2.5 px-3 text-right">Pledged (GHS)</th>
+                    <th className="py-2.5 px-3 text-right">Paid (GHS)</th>
+                    <th className="py-2.5 px-3 text-right">Outstanding (GHS)</th>
+                    <th className="py-2.5 px-3 min-w-[140px]">Progress</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {filteredMembers.map((member) => (
-                    <tr key={member.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                        {member.memberNumber}
-                      </td>
-                      <td className="p-2.5 font-mono font-semibold text-slate-700 dark:text-slate-300">
-                        {member.envelopeNumber || '-'}
-                      </td>
-                      <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                        {member.fullName}
-                      </td>
-                      <td className="p-2.5 text-slate-600 dark:text-slate-400">
-                        {member.familyGroup || '-'}
-                      </td>
-                      <td className="p-2.5 text-slate-600 dark:text-slate-400">
-                        {member.department || '-'}
-                      </td>
-                      <td className="p-2.5 text-slate-500 font-mono text-[11px]">
-                        •••• ••• {member.phoneHint || '•••'}
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold">
-                          {member.status}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-right">
-                        <button
-                          onClick={() => handleOpenMemberStatement(member)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-[11px] font-semibold border border-blue-200 dark:border-blue-800 transition"
-                          title="Generate Official Member Giving Statement"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Statement</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: INDIVIDUAL GIVING ENTRY & HISTORY */}
-      {activeTab === 'GIVING_ENTRY' && (
-        <div className="space-y-6">
-          {/* Contribution Entry Card */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Receipt className="w-5 h-5 text-blue-600" />
-              <span>Record Contribution & Issue Printable Official Receipt</span>
-            </h3>
-
-            <form onSubmit={handleRecordGiving} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {/* Member selection */}
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Select Member / Donor
-                  </label>
-                  <select
-                    value={selectedMemberId}
-                    onChange={(e) => setSelectedMemberId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  >
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.fullName} ({m.memberNumber} - {m.envelopeNumber || 'No Envelope'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Category */}
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Giving Category
-                  </label>
-                  <select
-                    value={givingCategory}
-                    onChange={(e) => setGivingCategory(e.target.value as GivingCategory)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  >
-                    <option value="Tithe">Tithe (10%)</option>
-                    <option value="General Offering">General Offering</option>
-                    <option value="Building Pledge">Building Pledge Payment</option>
-                    <option value="Special Offering">Special Thanksgiving</option>
-                    <option value="Missions">Missions & Evangelism</option>
-                    <option value="Welfare">Welfare & Benevolence</option>
-                  </select>
-                </div>
-
-                {/* Fund */}
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Fund Credited
-                  </label>
-                  <select
-                    value={givingFundId}
-                    onChange={(e) => setGivingFundId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  >
-                    {funds.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name} ({f.type})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Payment method */}
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Payment Method
-                  </label>
-                  <select
-                    value={givingMethod}
-                    onChange={(e) => setGivingMethod(e.target.value as PaymentMethod)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  >
-                    <option value="CASH">Cash on Hand</option>
-                    <option value="MOMO">Mobile Money (MoMo)</option>
-                    <option value="CHEQUE">Bank Cheque</option>
-                    <option value="BANK_TRANSFER">Direct Bank Deposit</option>
-                  </select>
-                </div>
-
-                {/* Currency */}
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Currency
-                  </label>
-                  <select
-                    value={givingCurrency}
-                    onChange={(e) => setGivingCurrency(e.target.value as Currency)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                  >
-                    <option value="GHS">Ghana Cedis (GHS)</option>
-                    <option value="USD">US Dollars (USD)</option>
-                  </select>
-                </div>
-
-                {/* Amount */}
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Amount ({givingCurrency})
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={givingAmount}
-                    onChange={(e) => setGivingAmount(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-mono font-bold text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Optional Notes
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. October monthly tithe, pledge payment #2"
-                  value={givingNotes}
-                  onChange={(e) => setGivingNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition shadow-md"
-                >
-                  <Receipt className="w-4 h-4" />
-                  <span>Issue Official Receipt & Record</span>
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Giving Records Table */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              Recent Member Contributions ({maskedGivingList.length})
-            </h3>
-
-            {maskedGivingList.length === 0 ? (
-              <EmptyState
-                message="No member contribution records logged yet."
-                actionLabel="Record Giving"
-                onAction={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                <tbody className="divide-y divide-[var(--surface-border-subtle)]">
+                  {filteredPledges.length === 0 ? (
                     <tr>
-                      <th className="p-2.5">Receipt No.</th>
-                      <th className="p-2.5">Date</th>
-                      <th className="p-2.5">Donor Name</th>
-                      <th className="p-2.5">Category</th>
-                      <th className="p-2.5">Fund</th>
-                      <th className="p-2.5">Method</th>
-                      <th className="p-2.5 text-right">Amount</th>
-                      <th className="p-2.5 text-center">Receipt</th>
+                      <td colSpan={7} className="py-12 text-center text-[var(--text-muted)]">
+                        No pledges recorded.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                    {maskedGivingList.map((rec) => (
-                      <tr key={rec.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {rec.receiptNumber}
-                        </td>
-                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{rec.serviceDate}</td>
-                        <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                          {rec.memberName}
-                        </td>
-                        <td className="p-2.5 text-slate-700 dark:text-slate-300">{rec.category}</td>
-                        <td className="p-2.5 text-slate-500">{rec.fundName}</td>
-                        <td className="p-2.5 text-slate-600 dark:text-slate-400">{rec.paymentMethod}</td>
-                        <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                          {rec.currency} {(Number(rec.amountPesewas) / 100).toFixed(2)}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <button
-                            onClick={() => handlePrintExistingReceipt(rec)}
-                            className="p-1 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400"
-                            title="View / Print Receipt"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+                  ) : (
+                    filteredPledges.map((p) => {
+                      const outstanding =
+                        p.targetAmountPesewas > p.paidAmountPesewas
+                          ? p.targetAmountPesewas - p.paidAmountPesewas
+                          : 0n;
+                      const percent =
+                        p.targetAmountPesewas > 0n
+                          ? Math.min(
+                              100,
+                              Math.round(
+                                (Number(p.paidAmountPesewas) / Number(p.targetAmountPesewas)) * 100
+                              )
+                            )
+                          : 0;
 
-      {/* TAB 3: PLEDGES & CAMPAIGNS */}
-      {activeTab === 'PLEDGES' && (
-        <div className="space-y-6">
-          {/* Campaign Summary Card */}
-          <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-900 text-white shadow-md space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-white/10 text-white">
-                  <Building className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold">Auditorium Expansion Project 2026</h3>
-                  <p className="text-xs text-blue-200">Restricted Building Fund Campaign</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsAddPledgeOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-white text-blue-900 rounded-xl text-xs font-bold hover:bg-blue-50 transition shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Record New Pledge</span>
-              </button>
-            </div>
-
-            {/* Campaign Progress Bar */}
-            <div className="space-y-1.5 pt-2">
-              <div className="flex justify-between text-xs text-blue-200 font-semibold">
-                <span>Total Pledged: GHS {(Number(totalPledgedPesewas) / 100).toFixed(2)}</span>
-                <span>Collected: GHS {(Number(totalPaidPesewas) / 100).toFixed(2)} ({pledgePercent}%)</span>
-              </div>
-              <div className="w-full bg-blue-950/60 rounded-full h-3 overflow-hidden p-0.5 border border-blue-400/30">
-                <div
-                  className="bg-emerald-400 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, pledgePercent)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Pledges List */}
-          <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              Individual Pledge Records ({maskedPledgesList.length})
-            </h3>
-
-            {maskedPledgesList.length === 0 ? (
-              <EmptyState
-                message="No active pledge commitments recorded yet."
-                actionLabel="Create New Pledge"
-                onAction={() => setIsAddPledgeOpen(true)}
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                    <tr>
-                      <th className="p-2.5">Member Name</th>
-                      <th className="p-2.5">Campaign</th>
-                      <th className="p-2.5">Target Date</th>
-                      <th className="p-2.5 text-right">Pledged (GHS)</th>
-                      <th className="p-2.5 text-right">Paid (GHS)</th>
-                      <th className="p-2.5 text-right">Outstanding</th>
-                      <th className="p-2.5 text-center">Status</th>
-                      <th className="p-2.5 text-right">Statement</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                    {maskedPledgesList.map((pld) => {
-                      const outstanding = pld.targetAmountPesewas - pld.paidAmountPesewas;
                       return (
-                        <tr key={pld.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                          <td className="p-2.5 font-semibold text-slate-900 dark:text-white">
-                            {pld.memberName}
+                        <tr key={p.id} className="hover:bg-[var(--surface-subtle)]/60 transition">
+                          <td className="py-2.5 px-3 font-medium text-[var(--text-primary)]">
+                            {p.campaignName}
                           </td>
-                          <td className="p-2.5 text-slate-600 dark:text-slate-400">{pld.campaignName}</td>
-                          <td className="p-2.5 text-slate-500">{pld.targetDate || '-'}</td>
-                          <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                            GHS {(Number(pld.targetAmountPesewas) / 100).toFixed(2)}
+                          <td className="py-2.5 px-3 text-[var(--text-secondary)]">{p.memberName}</td>
+                          <td className="py-2.5 px-3 text-right font-tabular text-[var(--text-primary)]">
+                            {formatMoneyAmount(p.targetAmountPesewas)}
                           </td>
-                          <td className="p-2.5 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            GHS {(Number(pld.paidAmountPesewas) / 100).toFixed(2)}
+                          <td className="py-2.5 px-3 text-right font-tabular text-[var(--text-primary)]">
+                            {formatMoneyAmount(p.paidAmountPesewas)}
                           </td>
-                          <td className="p-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
-                            GHS {(Number(outstanding > 0n ? outstanding : 0n) / 100).toFixed(2)}
+                          <td className="py-2.5 px-3 text-right font-tabular text-[var(--text-secondary)]">
+                            {formatMoneyAmount(outstanding)}
                           </td>
-                          <td className="p-2.5 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                pld.status === 'FULFILLED'
-                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
-                                  : 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300'
-                              }`}
-                            >
-                              {pld.status}
-                            </span>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-[var(--surface-border)] rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-[var(--accent)] h-1.5 rounded-full transition-all"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                              <span className="font-tabular text-[11px] text-[var(--text-muted)] w-8 text-right">
+                                {percent}%
+                              </span>
+                            </div>
                           </td>
-                          <td className="p-2.5 text-right">
-                            <button
-                              onClick={() => {
-                                const mem = members.find((m) => m.id === pld.memberId);
-                                if (mem) {
-                                  handleOpenMemberStatement(mem);
-                                }
-                              }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-[11px] font-medium transition"
-                              title="Generate Member Giving Statement"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span>Statement</span>
-                            </button>
+                          <td className="py-2.5 px-3 text-center">
+                            {p.status === 'FULFILLED' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                                Fulfilled
+                              </span>
+                            )}
+                            {p.status === 'ACTIVE' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                Active
+                              </span>
+                            )}
+                            {p.status === 'CANCELLED' && (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                Cancelled
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
+      {/* 2.3 MEMBER DETAIL PANEL (SlideOverPanel) */}
+      <SlideOverPanel
+        isOpen={isDrawerOpen}
+        onClose={() => setSelectedMemberId(null)}
+        title={selectedMember ? getMemberDisplayName(selectedMember) : ''}
+        subtitle={
+          selectedMember
+            ? `${selectedMember.memberNumber} · Joined ${formatDate(selectedMember.joinDate)}`
+            : undefined
+        }
+        width="max-w-[480px]"
+        actions={
+          selectedMember && (
+            <div className="flex items-center justify-between w-full gap-2">
+              <div className="flex items-center gap-2">
+                {isPrivileged && (
+                  <button
+                    onClick={() => handleOpenMemberStatement(selectedMember)}
+                    className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+                  >
+                    Print statement
+                  </button>
+                )}
+                <button
+                  onClick={() => handleOpenEditMember(selectedMember)}
+                  className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+                >
+                  Edit member
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  setGivingTargetMemberId(selectedMember.id);
+                  setIsRecordGivingOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
+              >
+                Record giving
+              </button>
+            </div>
+          )
+        }
+      >
+        {selectedMember && (
+          <div className="space-y-6 text-xs text-[var(--text-secondary)]">
+            {/* Status if not active */}
+            {selectedMember.status !== 'ACTIVE' && (
+              <div className="p-2.5 rounded-[var(--radius)] bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-center justify-between">
+                <span>Member status: <strong>{selectedMember.status}</strong></span>
+                {isTreasurerOrFinSec && (
+                  <button
+                    onClick={() => {
+                      updateMember(selectedMember.id, { status: 'ACTIVE' });
+                      logAuditEvent({
+                        action: 'UPDATE',
+                        record: selectedMember.memberNumber,
+                        entityType: 'MEMBER',
+                        entityId: selectedMember.id,
+                        details: `Reactivated member ${selectedMember.memberNumber}`,
+                      });
+                    }}
+                    className="text-xs text-[var(--accent)] font-semibold hover:underline"
+                  >
+                    Set as active
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Section 1: Contact Information */}
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Contact information
+              </h4>
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)]/50 border border-[var(--surface-border-subtle)]">
+                <div>
+                  <span className="text-[11px] text-[var(--text-muted)] block">Phone number</span>
+                  {selectedMember.phone ? (
+                    revealedPhones.has(selectedMember.id) ? (
+                      <span className="font-tabular font-medium text-[var(--text-primary)]">
+                        {selectedMember.phone}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 font-tabular">
+                        <span>{`+233 •• ••• •${selectedMember.phoneHint || selectedMember.phone.slice(-3)}`}</span>
+                        {isPrivileged && (
+                          <button
+                            type="button"
+                            onClick={() => handleRevealPhone(selectedMember)}
+                            className="text-[var(--accent)] hover:underline text-[11px] font-medium"
+                          >
+                            Show
+                          </button>
+                        )}
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-[var(--text-muted)]">None registered</span>
+                  )}
+                </div>
+
+                <div>
+                  <span className="text-[11px] text-[var(--text-muted)] block">Email address</span>
+                  <span className="font-medium text-[var(--text-primary)] break-all">
+                    {selectedMember.email || 'None registered'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Family & Household */}
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Family & Household
+              </h4>
+              <div className="p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)]/50 border border-[var(--surface-border-subtle)] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-[var(--text-muted)]">Family group</span>
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {selectedMember.familyGroup || 'None assigned'}
+                  </span>
+                </div>
+
+                {householdMembers.length > 0 && (
+                  <div className="pt-2 border-t border-[var(--surface-border-subtle)] space-y-1.5">
+                    <span className="text-[11px] text-[var(--text-muted)] block">
+                      Other family members ({householdMembers.length})
+                    </span>
+                    <div className="space-y-1">
+                      {householdMembers.map((hm) => (
+                        <div
+                          key={hm.id}
+                          onClick={() => {
+                            setSelectedMemberId(null);
+                            navigate(`#/members/${hm.id}`);
+                          }}
+                          className="flex items-center justify-between py-1 px-1.5 rounded hover:bg-[var(--surface-subtle)] cursor-pointer text-xs"
+                        >
+                          <span className="text-[var(--text-primary)] font-medium">
+                            {getMemberDisplayName(hm)}
+                          </span>
+                          <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
+                            {hm.department}
+                            <ChevronRight className="w-3 h-3" />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 3: Department and Join Date */}
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Church details
+              </h4>
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)]/50 border border-[var(--surface-border-subtle)]">
+                <div>
+                  <span className="text-[11px] text-[var(--text-muted)] block">Department</span>
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {selectedMember.department || 'General Congregation'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-[var(--text-muted)] block">Envelope number</span>
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {selectedMember.envelopeNumber || 'None assigned'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Giving & Financial Summary (Permitted roles only) */}
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Giving summary (2026)
+              </h4>
+
+              {!isPrivileged ? (
+                <div className="p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)]/40 border border-[var(--surface-border-subtle)] flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Giving records are confidential and restricted to authorized financial officers.</span>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Total YTD and last gift date */}
+                  <div className="grid grid-cols-2 gap-3 p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)]/50 border border-[var(--surface-border-subtle)]">
+                    <div>
+                      <span className="text-[11px] text-[var(--text-muted)] block">Total 2026 Giving</span>
+                      <span className="text-base font-semibold font-tabular text-[var(--text-primary)]">
+                        GHS {formatMoneyAmount(drawerMemberGiving.totalYtd)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-[var(--text-muted)] block">Last gift date</span>
+                      <span className="font-medium text-[var(--text-primary)]">
+                        {memberLastGiftMap.get(selectedMember.id)
+                          ? formatDate(memberLastGiftMap.get(selectedMember.id)!)
+                          : 'No gifts recorded'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Giving by fund */}
+                  {drawerMemberGiving.byFund.length > 0 && (
+                    <div className="rounded-[var(--radius)] border border-[var(--surface-border-subtle)] overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[var(--surface-subtle)]/60 text-[var(--text-muted)]">
+                          <tr>
+                            <th className="py-1.5 px-3">Fund</th>
+                            <th className="py-1.5 px-3 text-right">Amount (GHS)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--surface-border-subtle)]">
+                          {drawerMemberGiving.byFund.map((bf) => (
+                            <tr key={bf.fundName}>
+                              <td className="py-1.5 px-3 text-[var(--text-secondary)]">{bf.fundName}</td>
+                              <td className="py-1.5 px-3 text-right font-tabular text-[var(--text-primary)]">
+                                {formatMoneyAmount(bf.amountPesewas)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Recent gifts (up to 10) */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] text-[var(--text-muted)] font-medium">Recent gifts</span>
+                    {drawerMemberGiving.records.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-[var(--text-muted)] border border-dashed border-[var(--surface-border)] rounded-[var(--radius)]">
+                        No recent gifts recorded for this member.
+                      </div>
+                    ) : (
+                      <div className="rounded-[var(--radius)] border border-[var(--surface-border-subtle)] overflow-hidden">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[var(--surface-subtle)]/60 text-[var(--text-muted)]">
+                            <tr>
+                              <th className="py-1.5 px-2.5">Date</th>
+                              <th className="py-1.5 px-2.5">Category</th>
+                              <th className="py-1.5 px-2.5 text-right">Amount</th>
+                              <th className="py-1.5 px-2 w-8"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--surface-border-subtle)]">
+                            {drawerMemberGiving.records.map((r) => (
+                              <tr key={r.id}>
+                                <td className="py-1.5 px-2.5 font-tabular text-[var(--text-secondary)]">
+                                  {formatDate(r.serviceDate)}
+                                </td>
+                                <td className="py-1.5 px-2.5 text-[var(--text-secondary)]">{r.category}</td>
+                                <td className="py-1.5 px-2.5 text-right font-tabular text-[var(--text-primary)]">
+                                  {formatMoneyAmount(r.amountPesewas)}
+                                </td>
+                                <td className="py-1.5 px-2 text-center">
+                                  <button
+                                    onClick={() => {
+                                      const printable = generatePrintableReceipt({
+                                        record: r,
+                                        receivingOfficer: currentUser.fullName,
+                                        receivingOfficerRole: currentUser.role,
+                                      });
+                                      setActiveReceipt(printable);
+                                      setIsReceiptModalOpen(true);
+                                    }}
+                                    className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-0.5"
+                                    title="Print receipt"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pledges */}
+                  {drawerMemberGiving.memberPledges.length > 0 && (
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] text-[var(--text-muted)] font-medium">Pledges</span>
+                      <div className="space-y-2">
+                        {drawerMemberGiving.memberPledges.map((p) => {
+                          const outstanding =
+                            p.targetAmountPesewas > p.paidAmountPesewas
+                              ? p.targetAmountPesewas - p.paidAmountPesewas
+                              : 0n;
+                          const percent =
+                            p.targetAmountPesewas > 0n
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (Number(p.paidAmountPesewas) / Number(p.targetAmountPesewas)) * 100
+                                  )
+                                )
+                              : 0;
+
+                          return (
+                            <div
+                              key={p.id}
+                              className="p-2.5 rounded-[var(--radius)] border border-[var(--surface-border-subtle)] bg-[var(--surface-subtle)]/30 space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between text-xs font-medium text-[var(--text-primary)]">
+                                <span>{p.campaignName}</span>
+                                <span>GHS {formatMoneyAmount(p.targetAmountPesewas)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                                <span>Paid: GHS {formatMoneyAmount(p.paidAmountPesewas)}</span>
+                                <span>Outstanding: GHS {formatMoneyAmount(outstanding)}</span>
+                              </div>
+                              <div className="w-full bg-[var(--surface-border)] rounded-full h-1 overflow-hidden">
+                                <div
+                                  className="bg-[var(--accent)] h-1 rounded-full"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </SlideOverPanel>
+
       {/* ADD MEMBER MODAL */}
       {isAddMemberOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl text-slate-100 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-              <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-blue-400" />
-                <span>Register New Member</span>
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[var(--radius)] max-w-lg w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--surface-border)]">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">Add church member</h3>
               <button
                 onClick={() => setIsAddMemberOpen(false)}
-                className="text-slate-400 hover:text-white p-1"
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleAddMember} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Samuel Boateng"
-                  value={newMemberName}
-                  onChange={(e) => setNewMemberName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
-                />
+            {/* Duplicate warning */}
+            {duplicateWarning && (
+              <div className="p-3 rounded-[var(--radius)] bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>{duplicateWarning}</span>
               </div>
+            )}
 
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleAddMemberSubmit} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
-                  <label className="block text-slate-300 mb-1">Envelope No. (Optional)</label>
+                  <label className="block text-[var(--text-muted)] mb-1">Title</label>
+                  <select
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="">None</option>
+                    <option value="Brother">Brother</option>
+                    <option value="Sister">Sister</option>
+                    <option value="Deacon">Deacon</option>
+                    <option value="Deaconess">Deaconess</option>
+                    <option value="Elder">Elder</option>
+                    <option value="Pastor">Pastor</option>
+                    <option value="Rev.">Rev.</option>
+                    <option value="Dr.">Dr.</option>
+                    <option value="Mr.">Mr.</option>
+                    <option value="Mrs.">Mrs.</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">First name</label>
                   <input
                     type="text"
-                    placeholder="e.g. 095"
-                    value={newEnvelopeNo}
-                    onChange={(e) => setNewEnvelopeNo(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white font-mono"
+                    required
+                    value={newFirstName}
+                    onChange={(e) => setNewFirstName(e.target.value)}
+                    placeholder="e.g. Kwabena"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-slate-300 mb-1">Phone Number</label>
+                  <label className="block text-[var(--text-muted)] mb-1">Surname</label>
                   <input
                     type="text"
-                    placeholder="+233 24 000 0000"
+                    required
+                    value={newLastName}
+                    onChange={(e) => setNewLastName(e.target.value)}
+                    placeholder="e.g. Acheampong"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Phone number</label>
+                  <input
+                    type="text"
                     value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
+                    placeholder="+233 24 000 0000"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Email address</label>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="member@example.com"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-slate-300 mb-1">Family Group</label>
+                  <label className="block text-[var(--text-muted)] mb-1">Envelope no. (optional)</label>
                   <input
                     type="text"
-                    placeholder="e.g. Boateng Family"
-                    value={newFamily}
-                    onChange={(e) => setNewFamily(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
+                    value={newEnvelopeNo}
+                    onChange={(e) => setNewEnvelopeNo(e.target.value)}
+                    placeholder="e.g. 042"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-slate-300 mb-1">Department</label>
+                  <label className="block text-[var(--text-muted)] mb-1">Family group (optional)</label>
+                  <input
+                    type="text"
+                    value={newFamily}
+                    onChange={(e) => setNewFamily(e.target.value)}
+                    placeholder="e.g. Acheampong Family"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Department</label>
                   <select
                     value={newDept}
                     onChange={(e) => setNewDept(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
                   >
                     <option value="Men Fellowship">Men Fellowship</option>
                     <option value="Women Ministry">Women Ministry</option>
-                    <option value="Youth">Youth Ministry</option>
-                    <option value="Choir">Music & Choir</option>
-                    <option value="Ushers">Ushering Department</option>
+                    <option value="Choir">Choir</option>
+                    <option value="Youth">Youth</option>
+                    <option value="Ushers">Ushers</option>
+                    <option value="Children Ministry">Children Ministry</option>
                     <option value="Deacon Board">Deacon Board</option>
+                    <option value="Pastoral Council">Pastoral Council</option>
+                    <option value="Media & IT">Media & IT</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Initial status</label>
+                  <select
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value as any)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                    <option value="TRANSFERRED">Transferred</option>
                   </select>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
                 <button
                   type="button"
                   onClick={() => setIsAddMemberOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium"
+                  className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold"
+                  className="px-4 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
                 >
-                  Save Member
+                  Save member
                 </button>
               </div>
             </form>
@@ -816,77 +1940,528 @@ export const GivingDirectoryView: React.FC = () => {
         </div>
       )}
 
-      {/* ADD PLEDGE MODAL */}
-      {isAddPledgeOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl text-slate-100 space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-              <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                <Target className="w-4 h-4 text-emerald-400" />
-                <span>Record New Building Pledge</span>
+      {/* EDIT MEMBER MODAL */}
+      {isEditMemberOpen && selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[var(--radius)] max-w-lg w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--surface-border)]">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                Edit member details ({selectedMember.memberNumber})
               </h3>
               <button
-                onClick={() => setIsAddPledgeOpen(false)}
-                className="text-slate-400 hover:text-white p-1"
+                onClick={() => setIsEditMemberOpen(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleAddPledge} className="space-y-3 text-xs">
+            <form onSubmit={handleEditMemberSubmit} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Title</label>
+                  <select
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="">None</option>
+                    <option value="Brother">Brother</option>
+                    <option value="Sister">Sister</option>
+                    <option value="Deacon">Deacon</option>
+                    <option value="Deaconess">Deaconess</option>
+                    <option value="Elder">Elder</option>
+                    <option value="Pastor">Pastor</option>
+                    <option value="Rev.">Rev.</option>
+                    <option value="Dr.">Dr.</option>
+                    <option value="Mr.">Mr.</option>
+                    <option value="Mrs.">Mrs.</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">First name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFirstName}
+                    onChange={(e) => setEditFirstName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Surname</label>
+                  <input
+                    type="text"
+                    required
+                    value={editLastName}
+                    onChange={(e) => setEditLastName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Phone number</label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Email address</label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Envelope no.</label>
+                  <input
+                    type="text"
+                    value={editEnvelopeNo}
+                    onChange={(e) => setEditEnvelopeNo(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Family group</label>
+                  <input
+                    type="text"
+                    value={editFamily}
+                    onChange={(e) => setEditFamily(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Department</label>
+                  <select
+                    value={editDept}
+                    onChange={(e) => setEditDept(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="Men Fellowship">Men Fellowship</option>
+                    <option value="Women Ministry">Women Ministry</option>
+                    <option value="Choir">Choir</option>
+                    <option value="Youth">Youth</option>
+                    <option value="Ushers">Ushers</option>
+                    <option value="Children Ministry">Children Ministry</option>
+                    <option value="Deacon Board">Deacon Board</option>
+                    <option value="Pastoral Council">Pastoral Council</option>
+                    <option value="Media & IT">Media & IT</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as any)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                    <option value="TRANSFERRED">Transferred</option>
+                    <option value="DECEASED">Deceased</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
+                <button
+                  type="button"
+                  onClick={() => setIsEditMemberOpen(false)}
+                  className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
+                >
+                  Update details
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECORD GIVING MODAL */}
+      {isRecordGivingOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[var(--radius)] max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--surface-border)]">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">Record giving contribution</h3>
+              <button
+                onClick={() => setIsRecordGivingOpen(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordGivingSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="block text-slate-300 mb-1">Select Member</label>
+                <label className="block text-[var(--text-muted)] mb-1">Member / Donor</label>
                 <select
-                  value={pledgeMemberId}
-                  onChange={(e) => setPledgeMemberId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
+                  value={givingTargetMemberId}
+                  onChange={(e) => setGivingTargetMemberId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
                 >
                   {members.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.fullName} ({m.memberNumber})
+                      {getMemberDisplayName(m)} ({m.memberNumber})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Fund</label>
+                  <select
+                    value={givingFundId}
+                    onChange={(e) => setGivingFundId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    {funds.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Category</label>
+                  <select
+                    value={givingCategory}
+                    onChange={(e) => setGivingCategory(e.target.value as any)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="Tithe">Tithe</option>
+                    <option value="General Offering">General Offering</option>
+                    <option value="Building Pledge">Building Pledge</option>
+                    <option value="Missions">Missions</option>
+                    <option value="Welfare">Welfare</option>
+                    <option value="Other Donation">Other Donation</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Payment method</label>
+                  <select
+                    value={givingMethod}
+                    onChange={(e) => setGivingMethod(e.target.value as any)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="MOMO">Mobile Money</option>
+                    <option value="CHEQUE">Cheque</option>
+                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[var(--text-muted)] mb-1">Amount (GHS)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    value={givingAmount}
+                    onChange={(e) => setGivingAmount(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] font-tabular text-right outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[var(--text-muted)] mb-1">Notes / Purpose (optional)</label>
+                <input
+                  type="text"
+                  value={givingNotes}
+                  onChange={(e) => setGivingNotes(e.target.value)}
+                  placeholder="e.g. October Tithe envelope"
+                  className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
+                <button
+                  type="button"
+                  onClick={() => setIsRecordGivingOpen(false)}
+                  className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
+                >
+                  Record and issue receipt
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REVERSAL MODAL */}
+      {isReversalModalOpen && reversalTargetRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[var(--radius)] max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--surface-border)]">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                Reverse giving entry
+              </h3>
+              <button
+                onClick={() => setIsReversalModalOpen(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-[var(--radius)] bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Receipt no:</span>
+                <span className="font-tabular font-medium text-[var(--text-primary)]">
+                  {reversalTargetRecord.receiptNumber}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Donor:</span>
+                <span className="font-medium text-[var(--text-primary)]">
+                  {reversalTargetRecord.memberName}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--text-muted)]">Amount:</span>
+                <span className="font-tabular font-semibold text-[var(--text-primary)]">
+                  GHS {formatMoneyAmount(reversalTargetRecord.amountPesewas)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-[var(--text-muted)]">
+              Per accounting standards, financial records cannot be deleted. A reversal entry will be
+              posted to cancel this contribution, and the event will be permanently recorded in the audit
+              log.
+            </p>
+
+            <form onSubmit={handleReversalSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[var(--text-muted)] mb-1">
+                  Reason for reversal <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={reversalReason}
+                  onChange={(e) => setReversalReason(e.target.value)}
+                  placeholder="e.g. Incorrect fund allocation / donor cheque returned"
+                  className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
+                <button
+                  type="button"
+                  onClick={() => setIsReversalModalOpen(false)}
+                  className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-[var(--radius)] bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition"
+                >
+                  Confirm reversal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECORD PLEDGE MODAL */}
+      {isAddPledgeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[var(--radius)] max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--surface-border)]">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">Record special pledge</h3>
+              <button
+                onClick={() => setIsAddPledgeOpen(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddPledgeSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[var(--text-muted)] mb-1">Member</label>
+                <select
+                  value={pledgeTargetMemberId}
+                  onChange={(e) => setPledgeTargetMemberId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
+                >
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {getMemberDisplayName(m)} ({m.memberNumber})
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Campaign Project</label>
+                <label className="block text-[var(--text-muted)] mb-1">Campaign name</label>
                 <input
                   type="text"
+                  required
                   value={pledgeCampaign}
                   onChange={(e) => setPledgeCampaign(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white"
+                  className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Target Pledge Amount (GHS)</label>
+                <label className="block text-[var(--text-muted)] mb-1">Pledge target amount (GHS)</label>
                 <input
                   type="number"
                   step="0.01"
+                  min="1"
                   required
                   value={pledgeTargetAmtGhs}
                   onChange={(e) => setPledgeTargetAmtGhs(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 font-mono font-bold text-white"
+                  className="w-full px-2.5 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] font-tabular text-right outline-hidden"
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
                 <button
                   type="button"
                   onClick={() => setIsAddPledgeOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium"
+                  className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold"
+                  className="px-4 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
                 >
-                  Record Pledge
+                  Save pledge
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT CSV MODAL */}
+      {isImportCsvOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[var(--radius)] max-w-lg w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--surface-border)]">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">Import members from CSV</h3>
+              <button
+                onClick={() => setIsImportCsvOpen(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[var(--text-muted)]">
+              Paste CSV data with columns: <code>Title, First Name, Last Name, Phone, Email, Family Group, Department</code>.
+            </p>
+
+            {importFeedback && (
+              <div className="p-2.5 rounded-[var(--radius)] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 text-xs">
+                {importFeedback}
+              </div>
+            )}
+
+            <textarea
+              rows={6}
+              value={importCsvText}
+              onChange={(e) => setImportCsvText(e.target.value)}
+              placeholder="Brother, Kwesi, Boateng, +233241234567, kwesi@example.com, Boateng Family, Men Fellowship"
+              className="w-full p-2.5 rounded-[var(--radius)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] font-mono text-[11px] text-[var(--text-primary)] outline-hidden"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
+              <button
+                type="button"
+                onClick={() => setIsImportCsvOpen(false)}
+                className="px-3 py-1.5 rounded-[var(--radius)] border border-[var(--surface-border)] text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!importCsvText.trim()) return;
+                  const lines = importCsvText.trim().split('\n');
+                  let count = 0;
+                  lines.forEach((line) => {
+                    const parts = line.split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
+                    if (parts.length >= 3) {
+                      const [title, fn, ln, phone, email, fam, dept] = parts;
+                      if (fn || ln) {
+                        const memNo = `MEM-${String(members.length + 1 + count).padStart(3, '0')}`;
+                        addMember({
+                          branchId: currentUser.branchId,
+                          memberNumber: memNo,
+                          title: title || undefined,
+                          firstName: fn || undefined,
+                          lastName: ln || undefined,
+                          fullName: `${fn || ''} ${ln || ''}`.trim(),
+                          phone: phone || undefined,
+                          phoneHint: phone && phone.length >= 3 ? phone.slice(-3) : '000',
+                          email: email || undefined,
+                          familyGroup: fam || undefined,
+                          department: dept || 'Men Fellowship',
+                          status: 'ACTIVE',
+                          joinDate: new Date().toISOString().slice(0, 10),
+                        });
+                        count++;
+                      }
+                    }
+                  });
+                  setImportFeedback(`Successfully imported ${count} members.`);
+                  setImportCsvText('');
+                  logAuditEvent({
+                    action: 'CREATE',
+                    record: 'CSV Import',
+                    entityType: 'MEMBER_DIRECTORY',
+                    entityId: 'batch',
+                    details: `Imported ${count} members from CSV`,
+                  });
+                }}
+                className="px-4 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-[var(--accent-foreground)] text-xs font-semibold shadow-xs transition"
+              >
+                Process import
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -898,12 +2473,65 @@ export const GivingDirectoryView: React.FC = () => {
         onClose={() => setIsReceiptModalOpen(false)}
       />
 
-      {/* MEMBER GIVING STATEMENT MODAL */}
+      {/* MEMBER STATEMENT MODAL */}
       <MemberStatementModal
         statement={selectedStatement}
         isOpen={isStatementModalOpen}
         onClose={() => setIsStatementModalOpen(false)}
       />
+
+      {/* EXPORT PURPOSE MODAL (Spec C6: Required for all confidential exports) */}
+      {isExportPurposeOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-[var(--surface-card)] rounded-[var(--radius)] border border-[var(--surface-border)] max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">
+                  Export confidential giving data
+                </h3>
+                <p className="text-[13px] text-[var(--text-muted)] mt-0.5">
+                  Church data privacy policy requires an official purpose for exporting member or giving records. This is logged to the anti-tampering audit trail.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsExportPurposeOpen(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[13px] font-medium text-[var(--text-secondary)] mb-1">
+                Reason / Purpose for export <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="text"
+                value={exportPurposeInput}
+                onChange={(e) => setExportPurposeInput(e.target.value)}
+                placeholder="e.g. Annual church audit, Pastoral welfare review..."
+                className="w-full px-3 py-2 text-[13px] rounded-[var(--radius-sm)] border border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-primary)] focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--surface-border)]">
+              <button
+                onClick={() => setIsExportPurposeOpen(false)}
+                className="px-3 py-1.5 text-[13px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmExport}
+                disabled={!exportPurposeInput.trim()}
+                className="px-4 py-1.5 text-[13px] font-semibold rounded-[var(--radius-sm)] bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 transition"
+              >
+                Download CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

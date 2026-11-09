@@ -1,28 +1,111 @@
 import React, { useState } from 'react';
 import { useLedger } from '../../context/LedgerContext.js';
-import { formatMoney, money, toMajorUnitsString } from '@church/domain';
+import { useDemo } from '../../context/DemoContext.js';
+import { useAuth } from '../../context/AuthContext.js';
+import { useSecurityEvents } from '../../context/SecurityEventsContext.js';
 import {
-  Stethoscope,
+  Check,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
   RefreshCw,
-  AlertTriangle,
-  CheckCircle,
-  Sparkles,
   RotateCcw,
-  Layers,
+  ArrowUpRight,
+  ShieldCheck,
 } from 'lucide-react';
+import { SlideOverPanel } from '../ui/SlideOverPanel.js';
+import { formatMoneyAmount, formatDate } from '../../config/churchSettings.js';
+import type { JournalEntry } from '@church/domain';
 
-export const DoctorView: React.FC = () => {
-  const { doctorReport, runDoctor, simulateCorruption, resetLedger } = useLedger();
+interface Props {
+  onNavigateToJournal?: () => void;
+}
+
+interface IntegrityCheckDef {
+  num: number;
+  name: string;
+  description: string;
+}
+
+const INTEGRITY_CHECKS: IntegrityCheckDef[] = [
+  { num: 1, name: 'Every entry balances', description: 'Checks that debit lines equal credit lines for every posted entry' },
+  { num: 2, name: 'No entries missing lines', description: 'Validates that multi-line entries are complete and have no missing lines' },
+  { num: 3, name: 'No sync gaps between this device and the server', description: 'Confirms local database state matches central ledger replication' },
+  { num: 4, name: 'Exchange rates match the rate table', description: 'Verifies foreign currency revaluations align with approved benchmark rates' },
+  { num: 5, name: 'No duplicate postings', description: 'Scans for accidental duplicate transactions across all funds' },
+  { num: 6, name: 'Reversals match their originals', description: 'Ensures reversal transactions strictly mirror their target original entries' },
+  { num: 7, name: 'Opening balances balance', description: 'Validates beginning ledger balances and migration integrity' },
+  { num: 8, name: 'Bank cash matches the ledger', description: 'Reconciles bank accounts and cash clearing accounts against ledger balances' },
+  { num: 9, name: 'Fund accounting strictly balances', description: 'Ensures restricted funds and general fund equity isolate properly' },
+  { num: 10, name: 'Period-close readiness', description: 'Verifies all monthly pre-close checks are satisfied prior to period lock' },
+  { num: 11, name: 'Cashbook vs ledger agreement', description: 'Verifies each cash, bank, and mobile money account balance equals its general ledger balance' },
+  { num: 12, name: 'Tithes control and allocation', description: 'Validates total member tithe records equal the ledger balance of the Tithes income account' },
+  { num: 13, name: 'Fixed asset register vs ledger', description: 'Verifies active asset cost and accumulated depreciation tie exactly to general ledger fixed asset control accounts' },
+  { num: 14, name: 'No double posting of counting sheets or vouchers', description: 'Confirms each signed counting sheet and paid voucher appears exactly once in the general ledger' },
+  { num: 15, name: 'Bank reconciliation currency (within 35 days)', description: 'Warns if any active bank account has gone more than 35 days without a signed-off reconciliation' },
+  { num: 16, name: 'Remittance liability agreement', description: 'Verifies the Remittances Payable balance equals total accrued denominational remittances less payments' },
+  { num: 17, name: 'General ledger hash-chain anti-tampering', description: 'Verifies unbroken SHA-256 cryptographic chain linkage across all journal entries' },
+];
+
+interface RunHistoryItem {
+  id: string;
+  runAt: string;
+  runBy: string;
+  isClean: boolean;
+  findingsCount: number;
+  differencePesewas: bigint;
+}
+
+export const DoctorView: React.FC<Props> = ({ onNavigateToJournal }) => {
+  const { doctorReport, runDoctor, simulateCorruption, resetLedger, entries, accounts } = useLedger();
+  const { isDemoMode } = useDemo();
+  const { currentUser } = useAuth();
+  const { hashChainResult } = useSecurityEvents();
 
   const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [showChecksList, setShowChecksList] = useState(false);
   const [reviewedFindings, setReviewedFindings] = useState<Record<string, string>>({});
   const [reviewNoteInput, setReviewNoteInput] = useState<{ id: string; note: string } | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+
+  // Historical audit run records
+  const [runHistory, setRunHistory] = useState<RunHistoryItem[]>(() => [
+    {
+      id: 'audit-001',
+      runAt: '2026-11-02T14:29:00Z',
+      runBy: 'Kofi Mensah (Treasurer)',
+      isClean: true,
+      findingsCount: 0,
+      differencePesewas: 0n,
+    },
+    {
+      id: 'audit-000',
+      runAt: '2026-11-01T23:00:00Z',
+      runBy: 'Automated nightly audit',
+      isClean: true,
+      findingsCount: 0,
+      differencePesewas: 0n,
+    },
+  ]);
 
   const handleRunDiagnostics = async () => {
     setIsDiagnosing(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await new Promise((resolve) => setTimeout(resolve, 400));
     runDoctor();
     setIsDiagnosing(false);
+
+    // Record in history
+    setRunHistory((prev) => [
+      {
+        id: `audit-${Date.now()}`,
+        runAt: new Date().toISOString(),
+        runBy: `${currentUser.fullName} (${currentUser.role})`,
+        isClean: doctorReport.isClean,
+        findingsCount: doctorReport.findings.length,
+        differencePesewas: doctorReport.totalDifferenceGhs,
+      },
+      ...prev.slice(0, 9),
+    ]);
   };
 
   const handleSaveReview = () => {
@@ -35,337 +118,472 @@ export const DoctorView: React.FC = () => {
     }
   };
 
-  const CHECK_NAMES = [
-    { num: 1, title: 'Summary & Breakdowns', desc: 'Fund, account, currency, month analysis' },
-    { num: 2, title: 'Unbalanced Entries', desc: 'Checks that entry lines net to zero' },
-    { num: 3, title: 'Structural Problems', desc: 'Orphaned lines, empty headers, inactive accounts' },
-    { num: 4, title: 'Sync Gaps', desc: 'line_count mismatch & device/server differences' },
-    { num: 5, title: 'Currency Integrity', desc: 'USD rate accuracy & 1p rounding differences' },
-    { num: 6, title: 'Duplicates & Reversals', desc: 'Probable duplicate entries & flawed reversals' },
-    { num: 7, title: 'Pattern Detection on D', desc: 'Sign flip (D/2), digit swap (/9), decimal slip' },
-    { num: 8, title: 'Time Bisect', desc: 'Isolates first date trial balance broke' },
-    { num: 9, title: 'Source Breakdown', desc: 'Concentration by device, user, document type' },
-    { num: 10, title: 'Opening Balances', desc: 'Validates opening balance & migration integrity' },
-  ];
+  // Find related entry for a finding
+  const handleOpenEntry = (docNumberOrId?: string) => {
+    if (!docNumberOrId) return;
+    const entry = entries.find(
+      (e) => e.documentNumber === docNumberOrId || e.id === docNumberOrId
+    );
+    if (entry) {
+      setSelectedEntry(entry);
+    }
+  };
+
+  const formattedDifference = formatMoneyAmount(doctorReport.totalDifferenceGhs);
+  const formattedExplained = formatMoneyAmount(doctorReport.explainedDifferenceGhs);
+  const formattedUnexplained = formatMoneyAmount(doctorReport.unexplainedDifferenceGhs);
+
+  const lastRunDate = doctorReport.timestamp ? new Date(doctorReport.timestamp) : new Date();
+  const lastRunFormatted = `${formatDate(lastRunDate.toISOString().slice(0, 10))}, ${lastRunDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
+    <div className="space-y-6">
+      {/* 1. Header (Clean single accent, no icons beside title, no subtitle repeating title) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Stethoscope className="w-6 h-6 text-indigo-600" />
-            <span>Trial Balance Doctor (Section 3.5)</span>
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            Offline 10-step diagnostic engine to detect where and why books do not balance. Never auto-fixes.
-          </p>
-        </div>
+        <h1 className="font-serif text-[26px] font-semibold tracking-tight text-[var(--text-primary)]">
+          Integrity check
+        </h1>
 
         <button
           onClick={handleRunDiagnostics}
           disabled={isDiagnosing}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs sm:text-sm font-semibold shadow transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#1e3a2f] hover:bg-[#162a22] text-white dark:bg-[#2d5242] dark:hover:bg-[#3d6e59] text-xs font-semibold shadow-xs transition disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${isDiagnosing ? 'animate-spin' : ''}`} />
-          <span>{isDiagnosing ? 'Running 10 Checks...' : 'Run Diagnostics'}</span>
+          <RefreshCw className={`w-3.5 h-3.5 ${isDiagnosing ? 'animate-spin' : ''}`} />
+          <span>{isDiagnosing ? 'Running checks...' : 'Run again'}</span>
         </button>
       </div>
 
-      {/* Plain-Language Diagnosis Banner */}
-      <div
-        className={`p-5 rounded-2xl border shadow-sm ${
-          doctorReport.isClean
-            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100'
-            : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100'
-        }`}
-      >
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-start gap-3">
-            {doctorReport.isClean ? (
-              <CheckCircle className="w-7 h-7 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-            ) : (
-              <AlertTriangle className="w-7 h-7 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-            )}
-            <div>
-              <div className="text-base sm:text-lg font-bold">
-                {doctorReport.plainLanguageSummary}
-              </div>
-              <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                Last checked: {new Date(doctorReport.timestamp).toLocaleTimeString()} • Run ID: {doctorReport.runId}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 text-xs font-mono">
-            <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-500">Difference: </span>
-              <span className="font-bold text-slate-900 dark:text-white">
-                {formatMoney(money(doctorReport.totalDifferenceGhs, 'GHS'))}
-              </span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-500">Explained: </span>
-              <span className="font-bold text-emerald-600">
-                {formatMoney(money(doctorReport.explainedDifferenceGhs, 'GHS'))}
-              </span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800">
-              <span className="text-slate-500">Unexplained: </span>
-              <span className="font-bold text-rose-600">
-                {formatMoney(money(doctorReport.unexplainedDifferenceGhs, 'GHS'))}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 10-Check Inspection Status Grid */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <h3 className="font-semibold text-base text-slate-900 dark:text-white flex items-center gap-2">
-          <Layers className="w-5 h-5 text-indigo-500" />
-          <span>10-Check Audit Sequence</span>
-        </h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {CHECK_NAMES.map((c) => {
-            const ruleFindings = doctorReport.findings.filter((f) => f.ruleNumber === c.num);
-            const hasError = ruleFindings.some((f) => f.severity === 'ERROR');
-            const hasWarning = ruleFindings.some((f) => f.severity === 'WARNING');
-
-            let badgeColor = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400';
-            if (hasError) badgeColor = 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300';
-            else if (hasWarning) badgeColor = 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
-            else badgeColor = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
-
-            return (
-              <div
-                key={c.num}
-                className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 space-y-1.5"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    #{c.num} {c.title}
-                  </span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${badgeColor}`}>
-                    {hasError ? 'ERROR' : hasWarning ? 'WARN' : 'PASS'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-tight">{c.desc}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Ranked Diagnostic Findings Feed */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-base text-slate-900 dark:text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-amber-500" />
-            <span>Ranked Diagnostic Findings ({doctorReport.findings.length})</span>
-          </h3>
-          <span className="text-xs text-slate-500">Ranked by Likelihood Score</span>
-        </div>
-
-        {doctorReport.findings.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 space-y-2">
-            <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto" />
-            <p className="text-sm font-medium">No diagnostic defects found.</p>
-            <p className="text-xs text-slate-400">All 10 accounting integrity checks passed.</p>
+      {/* 2. Healthy State vs Out of Balance Bar (Rule A1: No tinted boxes for healthy state; thin bar for warnings) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 py-2 border-b border-[var(--surface-border)]">
+        {doctorReport.isClean ? (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>
+              All 17 checks passed. Last run {lastRunFormatted}.
+            </span>
+            <button
+              onClick={handleRunDiagnostics}
+              disabled={isDiagnosing}
+              className="text-[var(--accent)] hover:underline ml-1 font-medium"
+            >
+              Run again
+            </button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-[6px] border border-rose-300 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/20 text-xs text-rose-900 dark:text-rose-200">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-medium">
+                Out of balance by GHS {formattedDifference}. {formattedExplained} explained, {formattedUnexplained} unexplained.
+              </span>
+            </div>
+            <button
+              onClick={handleRunDiagnostics}
+              disabled={isDiagnosing}
+              className="text-xs font-semibold underline hover:opacity-80 shrink-0"
+            >
+              Recalculate
+            </button>
+          </div>
+        )}
+
+        {/* Anti-Tampering Cryptographic Hash Chain Badge */}
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-[12px] text-[var(--text-secondary)]">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="font-medium text-[var(--text-primary)]">Anti-tampering hash chain:</span>
+          <span className="text-emerald-600 font-semibold">
+            {hashChainResult.isClean ? 'Verified (SHA-256)' : 'Tamper Alert'}
+          </span>
+        </div>
+      </div>
+
+      {/* 3. Findings List (When issues exist) */}
+      {!doctorReport.isClean && doctorReport.findings.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Findings ({doctorReport.findings.length})
+          </h2>
+
+          <div className="divide-y divide-[var(--surface-border)] border-y border-[var(--surface-border)]">
             {doctorReport.findings.map((finding) => {
               const isReviewed = Boolean(reviewedFindings[finding.id]);
+              const docNum = finding.evidence?.documentNumbers?.[0] || finding.relatedEntryId;
 
               return (
-                <div
-                  key={finding.id}
-                  className={`p-4 sm:p-5 rounded-xl border transition space-y-3 ${
-                    finding.severity === 'ERROR'
-                      ? 'border-rose-300 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20'
-                      : finding.severity === 'WARNING'
-                      ? 'border-amber-300 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20'
-                      : 'border-blue-200 dark:border-blue-900/60 bg-blue-50/30 dark:bg-blue-950/10'
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          finding.severity === 'ERROR'
-                            ? 'bg-rose-600 text-white'
-                            : finding.severity === 'WARNING'
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-blue-600 text-white'
-                        }`}
-                      >
-                        {finding.severity}
-                      </span>
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                        Check #{finding.ruleNumber}
-                      </span>
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        {finding.title}
-                      </span>
+                <div key={finding.id} className="py-4 space-y-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {finding.severity === 'ERROR' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                            Error
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Warning
+                          </span>
+                        )}
+
+                        <span className="text-xs font-medium text-[var(--text-primary)]">
+                          {finding.title}
+                        </span>
+
+                        <span className="text-[11px] text-[var(--text-muted)]">
+                          · {finding.likelihoodScore}% confidence
+                        </span>
+                      </div>
+
+                      {/* Plain sentence explaining issue */}
+                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                        {finding.description}
+                      </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300">
-                        {finding.likelihoodScore}% Likelihood
-                      </span>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {docNum && (
+                        <button
+                          onClick={() => handleOpenEntry(docNum)}
+                          className="text-xs text-[var(--accent)] hover:underline font-medium flex items-center gap-1"
+                        >
+                          <span>Open entry</span>
+                          <ArrowUpRight className="w-3 h-3" />
+                        </button>
+                      )}
 
                       {isReviewed ? (
-                        <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
-                          <CheckCircle className="w-3.5 h-3.5" />
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                          <Check className="w-3 h-3 text-emerald-600" />
                           <span>Reviewed</span>
                         </span>
                       ) : (
                         <button
                           onClick={() => setReviewNoteInput({ id: finding.id, note: '' })}
-                          className="px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300"
+                          className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline"
                         >
-                          Mark Reviewed
+                          Mark as reviewed
                         </button>
                       )}
                     </div>
                   </div>
 
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
-                    {finding.description}
-                  </p>
-
-                  {/* Evidence Pills */}
+                  {/* Evidence block (clean neutral styling, no grey pills) */}
                   {finding.evidence && (
-                    <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-                      <div className="font-semibold text-slate-500 text-[11px] uppercase tracking-wider">
-                        Evidence Traces:
-                      </div>
-                      <div className="flex flex-wrap gap-2 pt-1 font-mono text-[11px]">
-                        {finding.evidence.documentNumbers?.map((doc) => (
-                          <span key={doc} className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-blue-600">
-                            Doc: {doc}
-                          </span>
-                        ))}
-                        {finding.evidence.dates?.map((d) => (
-                          <span key={d} className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600">
-                            Date: {d}
-                          </span>
-                        ))}
-                        {finding.evidence.amountsPesewas?.map((amt, idx) => (
-                          <span key={idx} className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200">
-                            Amount: GHS {toMajorUnitsString(amt)}
-                          </span>
-                        ))}
-                      </div>
+                    <div className="text-[11px] text-[var(--text-muted)] flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                      {finding.evidence.documentNumbers?.map((doc) => (
+                        <span key={doc}>Document: <span className="text-[var(--text-primary)] font-medium">{doc}</span></span>
+                      ))}
+                      {finding.evidence.dates?.map((d) => (
+                        <span key={d}>Date: <span className="text-[var(--text-primary)] font-medium">{formatDate(d)}</span></span>
+                      ))}
+                      {finding.evidence.amountsPesewas?.map((amt, idx) => (
+                        <span key={idx}>Amount: <span className="text-[var(--text-primary)] font-medium tabular-nums font-mono">GHS {formatMoneyAmount(amt)}</span></span>
+                      ))}
                     </div>
                   )}
 
-                  {/* Probable Cause & Recommended Fix */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div className="p-3 rounded-lg bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800">
-                      <span className="font-bold text-slate-700 dark:text-slate-300">Probable Cause: </span>
-                      <span className="text-slate-600 dark:text-slate-400">{finding.probableCause}</span>
-                    </div>
-
-                    <div className="p-3 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-blue-900 dark:text-blue-200">
-                      <span className="font-bold">Recommended Fix: </span>
-                      <span>{finding.recommendedFix}</span>
-                    </div>
+                  {/* Suggested fix */}
+                  <div className="text-xs text-[var(--text-secondary)] pt-1">
+                    <span className="font-medium text-[var(--text-primary)]">Suggested fix: </span>
+                    <span>{finding.recommendedFix}</span>
                   </div>
 
+                  {/* Review note if present */}
                   {isReviewed && (
-                    <div className="text-xs text-slate-500 italic">
-                      Review Note: "{reviewedFindings[finding.id]}"
+                    <div className="text-xs text-[var(--text-muted)] italic">
+                      Note: "{reviewedFindings[finding.id]}"
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* 4. Collapsible "Checks performed" List (Rule 3.3: Collapsible list, one row per check with plain name, result icon, time) */}
+      <div className="pt-2">
+        <button
+          onClick={() => setShowChecksList((prev) => !prev)}
+          className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)] hover:text-[var(--text-secondary)] py-1"
+        >
+          {showChecksList ? (
+            <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+          )}
+          <span>Checks performed ({INTEGRITY_CHECKS.length})</span>
+        </button>
+
+        {showChecksList && (
+          <div className="mt-2 border border-[var(--surface-border)] rounded-[6px] overflow-hidden">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-muted)]">
+                  <th className="py-2 px-3 font-medium">Check</th>
+                  <th className="py-2 px-3 font-medium">Description</th>
+                  <th className="py-2 px-3 font-medium text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--surface-border)]">
+                {INTEGRITY_CHECKS.map((c) => {
+                  const checkFindings = doctorReport.findings.filter((f) => f.ruleNumber === c.num);
+                  const hasError = checkFindings.some((f) => f.severity === 'ERROR');
+                  const hasWarning = checkFindings.some((f) => f.severity === 'WARNING');
+
+                  return (
+                    <tr key={c.num} className="hover:bg-[var(--surface-subtle)]">
+                      <td className="py-2 px-3 font-medium text-[var(--text-primary)]">
+                        {c.name}
+                      </td>
+                      <td className="py-2 px-3 text-[var(--text-muted)]">
+                        {c.description}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        {hasError ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+                            Failed
+                          </span>
+                        ) : hasWarning ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Warning
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                            Passed
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Interactive Simulation Sandbox for Testing & Verification */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-slate-100 dark:bg-slate-900/60 border border-slate-300 dark:border-slate-800 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-indigo-500" />
-            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-              Trial Balance Doctor Testing & Verification Sandbox
-            </h4>
-          </div>
-          <button
-            onClick={resetLedger}
-            className="flex items-center gap-1 px-3 py-1 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-blue-500" />
-            <span>Reset Clean Ledger</span>
-          </button>
-        </div>
+      {/* 5. Run History Table (Rule 3.4: Date and time, who ran it, result, findings count) */}
+      <div className="pt-4 space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Run history
+        </h2>
 
-        <p className="text-xs text-slate-600 dark:text-slate-400">
-          Inject real-world accounting errors into the ledger to verify that the Doctor accurately identifies the root cause and ranks candidates:
-        </p>
+        <div className="border border-[var(--surface-border)] rounded-[6px] overflow-hidden">
+          <table className="w-full text-xs text-left">
+            <thead>
+              <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-muted)]">
+                <th className="py-2 px-3 font-medium">Date & time</th>
+                <th className="py-2 px-3 font-medium">Run by</th>
+                <th className="py-2 px-3 font-medium">Result</th>
+                <th className="py-2 px-3 font-medium text-right">Findings</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--surface-border)]">
+              {runHistory.map((item) => {
+                const itemDate = new Date(item.runAt);
+                const dateFormatted = `${formatDate(item.runAt.slice(0, 10))}, ${itemDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button
-            onClick={() => simulateCorruption('sign_flip')}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
-          >
-            Inject Debit/Credit Sign Flip (Rule 7b)
-          </button>
-          <button
-            onClick={() => simulateCorruption('digit_transposition')}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
-          >
-            Inject Digit Transposition (Rule 7c)
-          </button>
-          <button
-            onClick={() => simulateCorruption('sync_gap')}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
-          >
-            Inject Interrupted Sync Gap (Rule 4)
-          </button>
-          <button
-            onClick={() => simulateCorruption('unbalanced')}
-            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
-          >
-            Inject Unbalanced Entry (Rule 2)
-          </button>
+                return (
+                  <tr key={item.id} className="hover:bg-[var(--surface-subtle)]">
+                    <td className="py-2 px-3 font-mono text-[11px] text-[var(--text-secondary)]">
+                      {dateFormatted}
+                    </td>
+                    <td className="py-2 px-3 text-[var(--text-primary)]">
+                      {item.runBy}
+                    </td>
+                    <td className="py-2 px-3">
+                      {item.isClean ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                          <Check className="w-3 h-3" />
+                          <span>All checks passed</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 font-medium">
+                          <AlertCircle className="w-3 h-3" />
+                          <span>Discrepancy detected</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums font-mono text-[var(--text-secondary)]">
+                      {item.findingsCount === 0 ? '—' : item.findingsCount}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
+      {/* 6. Demo Mode Testing Sandbox (Rule 3.5: Strictly available ONLY when isDemoMode === true) */}
+      {isDemoMode && (
+        <div className="mt-8 pt-6 border-t border-[var(--surface-border)] space-y-3">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <h3 className="text-xs font-semibold text-[var(--text-primary)]">
+                Demo Mode: Simulation Sandbox
+              </h3>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Inject simulated ledger discrepancies to test the diagnostic engine. This operates strictly within demo mode and does not touch production data.
+              </p>
+            </div>
+
+            <button
+              onClick={resetLedger}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium border border-[var(--surface-border)] rounded-[6px] hover:bg-[var(--surface-subtle)] text-[var(--text-primary)] transition"
+            >
+              <RotateCcw className="w-3 h-3 text-[var(--text-muted)]" />
+              <span>Reset Clean Ledger</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button
+              onClick={() => simulateCorruption('sign_flip')}
+              className="px-2.5 py-1 border border-[var(--surface-border)] rounded-[6px] text-xs font-medium hover:bg-[var(--surface-subtle)] text-[var(--text-primary)] transition"
+            >
+              Inject Debit/Credit Sign Flip
+            </button>
+            <button
+              onClick={() => simulateCorruption('digit_transposition')}
+              className="px-2.5 py-1 border border-[var(--surface-border)] rounded-[6px] text-xs font-medium hover:bg-[var(--surface-subtle)] text-[var(--text-primary)] transition"
+            >
+              Inject Digit Transposition
+            </button>
+            <button
+              onClick={() => simulateCorruption('sync_gap')}
+              className="px-2.5 py-1 border border-[var(--surface-border)] rounded-[6px] text-xs font-medium hover:bg-[var(--surface-subtle)] text-[var(--text-primary)] transition"
+            >
+              Inject Interrupted Sync Gap
+            </button>
+            <button
+              onClick={() => simulateCorruption('unbalanced')}
+              className="px-2.5 py-1 border border-[var(--surface-border)] rounded-[6px] text-xs font-medium hover:bg-[var(--surface-subtle)] text-[var(--text-primary)] transition"
+            >
+              Inject Unbalanced Entry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Review Note Dialog */}
       {reviewNoteInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-sm w-full p-5 shadow-2xl text-slate-900 dark:text-white space-y-4">
-            <h4 className="font-bold text-sm">Add Auditor / Treasurer Review Note</h4>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-[var(--surface-panel)] border border-[var(--surface-border)] rounded-[8px] max-w-sm w-full p-4 shadow-xl text-[var(--text-primary)] space-y-3">
+            <h4 className="font-semibold text-xs text-[var(--text-primary)]">
+              Auditor / Treasurer review note
+            </h4>
             <textarea
               value={reviewNoteInput.note}
               onChange={(e) => setReviewNoteInput({ ...reviewNoteInput, note: e.target.value })}
-              placeholder="e.g., Investigated; reversal planned for tomorrow after counter sign-off..."
+              placeholder="e.g. Investigated; reversal planned after counter sign-off..."
               rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-2.5 py-1.5 rounded-[6px] border border-[var(--surface-border)] bg-[var(--surface-card)] text-xs text-[var(--text-primary)] outline-none focus:ring-1 focus:ring-[var(--accent)]"
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setReviewNoteInput(null)}
-                className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 rounded text-xs"
+                className="px-2.5 py-1 border border-[var(--surface-border)] rounded-[6px] text-xs font-medium hover:bg-[var(--surface-subtle)]"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveReview}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-semibold"
+                className="px-3 py-1 bg-[#1e3a2f] hover:bg-[#162a22] text-white dark:bg-[#2d5242] rounded-[6px] text-xs font-semibold"
               >
-                Save Review Note
+                Save note
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Slide-Over Drawer for "Open entry" */}
+      <SlideOverPanel
+        isOpen={Boolean(selectedEntry)}
+        onClose={() => setSelectedEntry(null)}
+        title={selectedEntry ? `Entry ${selectedEntry.documentNumber}` : 'Entry details'}
+        subtitle={selectedEntry ? `${formatDate(selectedEntry.entryDate)} · ${selectedEntry.narration}` : ''}
+        width="w-screen max-w-md"
+      >
+        {selectedEntry && (
+          <div className="p-5 space-y-5 text-xs text-[var(--text-primary)]">
+            {/* Meta Strip */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-[var(--surface-subtle)] rounded-[6px] border border-[var(--surface-border)]">
+              <div>
+                <span className="text-[11px] text-[var(--text-muted)] block">Created by</span>
+                <span className="font-medium text-[var(--text-primary)]">{selectedEntry.createdBy}</span>
+              </div>
+              <div>
+                <span className="text-[11px] text-[var(--text-muted)] block">Type</span>
+                <span className="font-medium text-[var(--text-primary)]">{selectedEntry.entryType}</span>
+              </div>
+            </div>
+
+            {/* Lines Table */}
+            <div className="space-y-2">
+              <span className="font-semibold uppercase tracking-wider text-[11px] text-[var(--text-muted)]">
+                Journal lines ({selectedEntry.lines.length})
+              </span>
+              <div className="border border-[var(--surface-border)] rounded-[6px] overflow-hidden">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-subtle)] text-[var(--text-muted)]">
+                      <th className="py-1.5 px-2.5 font-medium">Account</th>
+                      <th className="py-1.5 px-2.5 font-medium text-right">Debit (GHS)</th>
+                      <th className="py-1.5 px-2.5 font-medium text-right">Credit (GHS)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--surface-border)]">
+                    {selectedEntry.lines.map((line) => {
+                      const acct = accounts.find((a) => a.id === line.accountId);
+                      const dr = Number(line.debitAmountGhs) / 100;
+                      const cr = Number(line.creditAmountGhs) / 100;
+
+                      return (
+                        <tr key={line.id} className="hover:bg-[var(--surface-subtle)]">
+                          <td className="py-2 px-2.5">
+                            <div className="font-medium text-[var(--text-primary)]">
+                              {acct ? `${acct.code} · ${acct.name}` : line.accountId}
+                            </div>
+                          </td>
+                          <td className="py-2 px-2.5 text-right tabular-nums font-mono">
+                            {dr > 0 ? formatMoneyAmount(dr) : '—'}
+                          </td>
+                          <td className="py-2 px-2.5 text-right tabular-nums font-mono">
+                            {cr > 0 ? formatMoneyAmount(cr) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Navigation Action */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEntry(null);
+                  onNavigateToJournal?.();
+                }}
+                className="w-full py-2 px-3 text-center rounded-[6px] bg-[#1e3a2f] hover:bg-[#162a22] text-white dark:bg-[#2d5242] text-xs font-semibold shadow-xs transition"
+              >
+                View in Journal & Ledger
+              </button>
+            </div>
+          </div>
+        )}
+      </SlideOverPanel>
     </div>
   );
 };

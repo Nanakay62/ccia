@@ -71,10 +71,10 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Member Details</span>
               <div className="font-bold text-sm text-slate-900">{statement.memberName}</div>
               {statement.memberNumber && (
-                <div className="text-slate-600">Member No: <span className="font-mono font-semibold">{statement.memberNumber}</span></div>
+                <div className="text-slate-600">Member No: <span className="font-semibold">{statement.memberNumber}</span></div>
               )}
               {statement.envelopeNumber && (
-                <div className="text-slate-600">Giving Envelope: <span className="font-mono font-semibold">{statement.envelopeNumber}</span></div>
+                <div className="text-slate-600">Giving Envelope: <span className="font-semibold">{statement.envelopeNumber}</span></div>
               )}
             </div>
             <div className="space-y-1 text-right">
@@ -113,13 +113,13 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
                   ) : (
                     statement.lines.map((l) => (
                       <tr key={l.receiptNumber} className="hover:bg-slate-50/50">
-                        <td className="py-2 px-3 text-slate-500 font-mono">{l.serviceDate}</td>
-                        <td className="py-2 px-3 font-mono text-slate-600">{l.receiptNumber}</td>
-                        <td className="py-2 px-3 font-bold text-slate-800">{l.category}</td>
+                        <td className="py-2 px-3 text-slate-500 font-tabular">{l.serviceDate}</td>
+                        <td className="py-2 px-3 text-slate-600 font-tabular">{l.receiptNumber}</td>
+                        <td className="py-2 px-3 font-semibold text-slate-800">{l.category}</td>
                         <td className="py-2 px-3 text-slate-500">{l.fundName}</td>
                         <td className="py-2 px-3 text-slate-500 text-[11px]">{l.paymentMethod}</td>
-                        <td className="py-2 px-3 font-mono font-bold text-right text-slate-900 tabular-nums">
-                          {(Number(l.amountPesewas) / 100).toFixed(2)}
+                        <td className="py-2 px-3 font-semibold text-right text-slate-900 font-tabular">
+                          {(Number(l.amountPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))
@@ -137,8 +137,8 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
               {statement.byCategory.map((cat) => (
                 <div key={cat.category} className="flex justify-between">
                   <span className="text-slate-700">{cat.category}:</span>
-                  <span className="font-mono font-bold text-slate-900 tabular-nums">
-                    GHS {(Number(cat.totalPesewas) / 100).toFixed(2)}
+                  <span className="font-semibold text-slate-900 font-tabular">
+                    GHS {(Number(cat.totalPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               ))}
@@ -153,9 +153,9 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
                 statement.pledgeCampaigns.map((p) => (
                   <div key={p.campaignName} className="space-y-0.5">
                     <div className="font-semibold text-slate-800">{p.campaignName}</div>
-                    <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
-                      <span>Pledged: GHS {(Number(p.pledgedPesewas) / 100).toFixed(2)}</span>
-                      <span>Paid: GHS {(Number(p.fulfilledPesewas) / 100).toFixed(2)}</span>
+                    <div className="flex justify-between text-[11px] text-slate-500 font-tabular">
+                      <span>Pledged: GHS {(Number(p.pledgedPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span>Paid: GHS {(Number(p.fulfilledPesewas) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 ))
@@ -167,7 +167,7 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
           <div className="p-4 rounded-[var(--radius)] bg-slate-50 border-2 border-slate-800 space-y-1">
             <div className="flex justify-between items-center text-sm font-bold text-slate-900">
               <span>TOTAL FINANCIAL CONTRIBUTIONS:</span>
-              <span className="text-lg font-bold font-mono text-[var(--accent)] tabular-nums">{statement.totalContributedFigures}</span>
+              <span className="text-lg font-bold text-[var(--accent)] font-tabular">{statement.totalContributedFigures}</span>
             </div>
             <p className="text-xs italic text-slate-700 pt-1 border-t border-slate-200">
               Amount in words: <span className="font-semibold">{statement.totalContributedWords}</span>
@@ -190,7 +190,7 @@ export const MemberStatementModal: React.FC<MemberStatementModalProps> = ({
             }}
             approvedBy={{
               label: 'Senior Pastor Endorsement',
-              name: 'Rev. Emmanuel Appiah',
+              name: 'Rev. Emmanuel Addo',
               role: 'Senior Pastor / Minister in Charge',
               signaturePlaceholder: '(Endorsed)',
             }}

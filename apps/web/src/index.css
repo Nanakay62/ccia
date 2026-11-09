@@ -6,6 +6,7 @@
   /* Surface Tokens (Paper & Ledger Tone) */
   --surface-ground: #f8f6f0;        /* warm paper off-white ground */
   --surface-panel: #ffffff;         /* clean white panel */
+  --surface-card: #ffffff;          /* card/modal background alias */
   --surface-subtle: #f2efe7;        /* warm tinted row/header background */
   --surface-border: #e3ded3;        /* hairline border */
   --surface-border-subtle: #edeae2; /* delicate row divider */
@@ -56,6 +57,7 @@
   /* Warm Dark Grey (not blue-black) */
   --surface-ground: #1c1c1a;        /* warm charcoal ground */
   --surface-panel: #242422;         /* warm dark panel */
+  --surface-card: #242422;          /* card/modal background alias */
   --surface-subtle: #2d2d29;        /* warm header/stripe */
   --surface-border: #3c3c36;        /* hairline border */
   --surface-border-subtle: #33332d; /* delicate row divider */
@@ -130,6 +132,14 @@
   font-variant-numeric: tabular-nums;
   -webkit-font-feature-settings: "tnum" 1;
   font-feature-settings: "tnum" 1;
+}
+
+/* Enforce UI sans-serif tabular figures globally (no monospace fonts per spec) */
+.font-mono {
+  font-family: var(--font-sans) !important;
+  font-variant-numeric: tabular-nums !important;
+  -webkit-font-feature-settings: "tnum" 1 !important;
+  font-feature-settings: "tnum" 1 !important;
 }
 
 /* Hairline rule divider */
@@ -217,4 +227,21 @@ body.demo-mode-active::after {
     white-space: nowrap !important;
     display: block !important;
   }
+}
+
+/* Accessible shake animation for input errors */
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-6px);
+  }
+  40%, 80% {
+    transform: translateX(6px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.35s ease-in-out;
 }

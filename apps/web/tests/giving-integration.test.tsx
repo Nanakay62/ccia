@@ -6,6 +6,7 @@ import { DemoProvider } from '../src/context/DemoContext.js';
 import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { GivingProvider } from '../src/context/GivingContext.js';
+import { ToastProvider } from '../src/context/ToastContext.js';
 import { CountingSheetView } from '../src/components/giving/CountingSheetView.js';
 import { GivingDirectoryView } from '../src/components/giving/GivingDirectoryView.js';
 import { PrintableReceiptModal } from '../src/components/giving/PrintableReceiptModal.js';
@@ -16,7 +17,9 @@ const TestAppProviders: React.FC<{ children: React.ReactNode }> = ({ children })
     <DemoProvider>
       <SyncProvider>
         <LedgerProvider>
-          <GivingProvider>{children}</GivingProvider>
+          <GivingProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </GivingProvider>
         </LedgerProvider>
       </SyncProvider>
     </DemoProvider>
@@ -31,12 +34,12 @@ describe('Phase 4: CountingSheetView Web UI', () => {
       </TestAppProviders>
     );
 
-    expect(screen.getByText(/Weekly Counting Sheet/i)).toBeDefined();
-    expect(screen.getByText(/Cash Denomination Count/i)).toBeDefined();
+    expect(screen.getByRole('heading', { name: /^Counting sheet$/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^GHS cash$/i })).toBeDefined();
 
     // Find the two counter dropdowns by their default selected values
-    const counter1Select = screen.getByDisplayValue(/Sister Grace Addo \(Counter 1\)/i);
-    const counter2Select = screen.getByDisplayValue(/Brother Emmanuel Ofori \(Counter 2\)/i);
+    const counter1Select = screen.getByDisplayValue(/Mabel Ankrah/i);
+    const counter2Select = screen.getByDisplayValue(/Emmanuel Ofori/i);
 
     // Set counter2 to match counter1's id
     fireEvent.change(counter2Select, { target: { value: 'user-0003-counter' } });
@@ -50,7 +53,7 @@ describe('Phase 4: CountingSheetView Web UI', () => {
     expect(submitBtn?.disabled).toBe(true);
   });
 
-  it('allows adding cheques, calculating totals, and posting with distinct counters', async () => {
+  it('allows adding cash, calculating totals, and posting with distinct counters', async () => {
     render(
       <TestAppProviders>
         <CountingSheetView />
@@ -58,17 +61,16 @@ describe('Phase 4: CountingSheetView Web UI', () => {
     );
 
     // Enter GHS 200 quantity = 10 -> GHS 2,000.00
-    const qtyInputs = screen.getAllByPlaceholderText('Qty');
-    const ghs200Input = qtyInputs[0]!;
+    const ghs200Input = screen.getByTestId('qty-ghs-200');
     fireEvent.change(ghs200Input, { target: { value: '10' } });
 
     // Click quick allocate so fund allocation matches GHS 2,000.00
-    const quickAllocBtn = screen.getByText(/Quick Allocate \(50\/50\)/i);
+    const quickAllocBtn = screen.getByText(/Quick allocate \(50\/50\)/i);
     fireEvent.click(quickAllocBtn);
 
-    // Ensure distinct counters (Counter 1: Sister Grace, Counter 2: Brother Emmanuel)
-    const counter1Select = screen.getByDisplayValue(/Sister Grace Addo \(Counter 1\)/i);
-    const counter2Select = screen.getByDisplayValue(/Brother Emmanuel Ofori \(Counter 2\)/i);
+    // Ensure distinct counters (Counter 1: Mabel Ankrah, Counter 2: Emmanuel Ofori)
+    const counter1Select = screen.getByDisplayValue(/Mabel Ankrah/i);
+    const counter2Select = screen.getByDisplayValue(/Emmanuel Ofori/i);
     fireEvent.change(counter1Select, { target: { value: 'user-0003-counter' } });
     fireEvent.change(counter2Select, { target: { value: 'user-0004-counter2' } });
 
@@ -77,49 +79,90 @@ describe('Phase 4: CountingSheetView Web UI', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Counting Sheet Posted Successfully/i)).toBeDefined();
+      expect(screen.getAllByText(/Posted to (general )?ledger/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it('supports adding permanent and temporary counters to roster and assigns them', async () => {
+    render(
+      <TestAppProviders>
+        <CountingSheetView />
+      </TestAppProviders>
+    );
+
+    // Click "+ Add counter" button
+    const addCounterBtn = screen.getAllByRole('button', { name: /\+ Add counter/i })[0]!;
+    fireEvent.click(addCounterBtn);
+
+    // Modal should be visible
+    expect(screen.getByRole('heading', { name: /Add counter to roster/i })).toBeDefined();
+
+    // Fill in name and select Temporary counter
+    const nameInput = screen.getByPlaceholderText(/e\.g\. Deacon Kwabena Mensah/i);
+    fireEvent.change(nameInput, { target: { value: 'Deacon Kwabena Mensah' } });
+
+    const tempBtn = screen.getByRole('button', { name: /Temporary Counter/i });
+    fireEvent.click(tempBtn);
+
+    // Select "Assign to Counter 1"
+    const counter1Radio = screen.getByLabelText(/Counter 1/i);
+    fireEvent.click(counter1Radio);
+
+    // Submit
+    const saveBtn = screen.getByRole('button', { name: /Save Counter/i });
+    fireEvent.click(saveBtn);
+
+    // Verify modal is closed and Counter 1 now shows Deacon Kwabena Mensah
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /Add counter to roster/i })).toBeNull();
+      expect(screen.getAllByText(/Deacon Kwabena Mensah/i)[0]).toBeDefined();
     });
   });
 });
 
 describe('Phase 4: GivingDirectoryView & Privacy Rule', () => {
-  it('displays member directory, searches by name, and shows unmasked records for Treasurer', async () => {
+  it('displays member directory, searches by name, and removes the green authorized badge per spec 2.1', async () => {
     render(
       <TestAppProviders>
         <GivingDirectoryView />
       </TestAppProviders>
     );
 
-    // Default logged in user is Treasurer -> Full Giving Records Authorized
-    expect(screen.getByText(/Full Giving Records Authorized/i)).toBeDefined();
+    // Header has title Members and does NOT show decorative permission badge (Spec 2.1)
+    expect(screen.getByRole('heading', { level: 1, name: 'Members' })).toBeDefined();
+    expect(screen.queryByText(/Full Giving Records Authorized/i)).toBeNull();
 
-    // Member Directory table displays Kofi Mensah
-    expect(screen.getByText('Kofi Mensah')).toBeDefined();
-    expect(screen.getByText('Akua Mansa')).toBeDefined();
+    // Member Directory table displays Kofi Mensah and Akua Mansa
+    expect(screen.getByText(/Kofi Mensah/i)).toBeDefined();
+    expect(screen.getByText(/Akua Mansa/i)).toBeDefined();
 
     // Test search filter
     const searchInput = screen.getByPlaceholderText(/Search by name/i);
     fireEvent.change(searchInput, { target: { value: 'Akua' } });
 
-    expect(screen.queryByText('Kofi Mensah')).toBeNull();
-    expect(screen.getByText('Akua Mansa')).toBeDefined();
+    expect(screen.queryByText(/Kofi Mensah/i)).toBeNull();
+    expect(screen.getByText(/Akua Mansa/i)).toBeDefined();
   });
 
-  it('switches to Tithes tab, records new contribution, and shows printable receipt', async () => {
+  it('switches to Giving tab, records new contribution, and shows printable receipt', async () => {
     render(
       <TestAppProviders>
         <GivingDirectoryView />
       </TestAppProviders>
     );
 
-    // Switch to Individual Tithes & Giving tab
-    const tithesTab = screen.getByText(/Individual Tithes & Giving/i);
-    fireEvent.click(tithesTab);
+    // Switch to Giving tab (underline tabs per Spec 2.1)
+    const givingTab = screen.getByRole('button', { name: /^giving/i });
+    fireEvent.click(givingTab);
 
-    expect(screen.getByText(/Record Contribution & Issue Printable Official Receipt/i)).toBeDefined();
+    // Click "Record giving"
+    const recordBtn = screen.getByRole('button', { name: /Record giving/i });
+    fireEvent.click(recordBtn);
+
+    expect(screen.getByText(/Record giving contribution/i)).toBeDefined();
 
     // Submit form to issue receipt
-    const form = screen.getByText(/Issue Official Receipt & Record/i).closest('form')!;
+    const form = screen.getByRole('button', { name: /Record and issue receipt/i }).closest('form')!;
     fireEvent.submit(form);
 
     // Receipt Modal should pop up with legal tender words
@@ -138,12 +181,12 @@ describe('Phase 4: GivingDirectoryView & Privacy Rule', () => {
     );
 
     // Switch to Pledges tab
-    const pledgesTab = screen.getByText(/Pledges & Special Campaigns/i);
+    const pledgesTab = screen.getByRole('button', { name: /Pledges and campaigns/i });
     fireEvent.click(pledgesTab);
 
     expect(screen.getAllByText(/Auditorium Expansion Project 2026/i)[0]).toBeDefined();
-    expect(screen.getByText(/Total Pledged:/i)).toBeDefined();
-    expect(screen.getByText(/Collected:/i)).toBeDefined();
+    expect(screen.getByText(/Total Pledged/i)).toBeDefined();
+    expect(screen.getByText(/Total Paid/i)).toBeDefined();
   });
 });
 
@@ -152,8 +195,8 @@ describe('Phase 4: PrintableReceiptModal Component', () => {
     const mockReceipt: PrintableReceipt = {
       receiptNumber: 'REC-FS-00124',
       date: '2026-10-25',
-      churchName: 'Accra Central Grace Chapel',
-      churchBranch: 'Accra Main Branch',
+      churchName: 'Calvary Crystal Church',
+      churchBranch: 'Main Branch',
       churchAddress: 'P.O. Box AN 1234, Accra North, Ghana',
       donorName: 'Deacon Kwabena Acheampong',
       donorMemberNumber: 'MEM-003',
@@ -176,7 +219,7 @@ describe('Phase 4: PrintableReceiptModal Component', () => {
       />
     );
 
-    expect(screen.getByText(/Accra Central Grace Chapel/i)).toBeDefined();
+    expect(screen.getByText(/Calvary Crystal Church/i)).toBeDefined();
     expect(screen.getByText('REC-FS-00124')).toBeDefined();
     expect(screen.getByText('Deacon Kwabena Acheampong')).toBeDefined();
     expect(screen.getByText('GHS 2,500.00')).toBeDefined();

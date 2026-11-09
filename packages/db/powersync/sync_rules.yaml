@@ -2,26 +2,44 @@
 # Enforces role-based sync boundaries and member giving privacy offline.
 
 bucket_definitions:
-  # Reference data synced to all active users
+  # Reference data synced to all active users (requires approved device and supported schema version)
   reference_data:
     data:
       - SELECT * FROM branches WHERE id = request.user_branch_id
       - SELECT * FROM funds WHERE branch_id = request.user_branch_id AND is_active = true
       - SELECT * FROM accounts WHERE branch_id = request.user_branch_id AND is_active = true
+      - SELECT * FROM financial_years WHERE branch_id = request.user_branch_id
       - SELECT * FROM periods WHERE branch_id = request.user_branch_id
       - SELECT * FROM exchange_rates WHERE branch_id = request.user_branch_id
+      - SELECT * FROM client_versions WHERE branch_id = request.user_branch_id
       - SELECT * FROM roles
       - SELECT id, branch_id, email, full_name, role, department_id, is_active FROM users_profile WHERE branch_id = request.user_branch_id
 
   # Ledger and financial transactions for financial managers (Treasurer, Finance Secretary, Pastor / Elder, Auditor)
+  # Syncs current and previous financial year to keep offline devices fast (A4); older years load on demand when online
   financial_management:
     parameters:
       - SELECT request.user_role IN ('Treasurer', 'Finance Secretary', 'Pastor / Elder', 'Auditor') as has_access
     data:
-      - SELECT * FROM journal_entries WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM journal_entries WHERE branch_id = request.user_branch_id AND entry_date >= (CURRENT_DATE - INTERVAL '2 years') AND bucket.has_access
       - SELECT * FROM journal_lines WHERE journal_entry_id IN (
-          SELECT id FROM journal_entries WHERE branch_id = request.user_branch_id
+          SELECT id FROM journal_entries WHERE branch_id = request.user_branch_id AND entry_date >= (CURRENT_DATE - INTERVAL '2 years')
         ) AND bucket.has_access
+      - SELECT * FROM year_end_runs WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM year_end_checks WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM year_end_overrides WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM issued_reports WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM import_batches WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM parallel_run_entries WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM go_live_items WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM go_live_event WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM approval_rule_versions WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM approval_rules WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM approval_requests WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM approval_steps WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM sod_rules WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM sod_exceptions WHERE branch_id = request.user_branch_id AND bucket.has_access
+      - SELECT * FROM controlled_detail_changes WHERE branch_id = request.user_branch_id AND bucket.has_access
       - SELECT * FROM vouchers WHERE branch_id = request.user_branch_id AND bucket.has_access
       - SELECT * FROM vendors WHERE branch_id = request.user_branch_id AND bucket.has_access
       - SELECT * FROM assets WHERE branch_id = request.user_branch_id AND bucket.has_access

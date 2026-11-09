@@ -45,8 +45,8 @@ export function generateDenominationUsdSummaryReport(
   input: GenerateUsdSummaryInput
 ): DenominationUsdSummaryReport {
   const {
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = 'Calvary Crystal Church',
+    branchName = 'Main Branch',
     asOfDate,
     periodStart,
     periodEnd,

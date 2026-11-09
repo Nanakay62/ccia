@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext.js';
 import { useDemo } from '../context/DemoContext.js';
 import { defaultChurchSettings } from '../config/churchSettings.js';
 import { SyncIndicator } from './SyncIndicator.js';
+import { NotificationCentrePopover } from './ui/NotificationCentrePopover.js';
 import {
   Landmark,
   Lock,
@@ -38,15 +39,21 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-[var(--surface-panel)] border-b border-[var(--surface-border)] px-4 sm:px-6 py-2.5 sticky top-0 z-30 transition-colors">
       <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-x-4 gap-y-2">
         {/* Left: Church Identity (From Single Source of Truth) */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-3 min-w-0 shrink">
           <div className="w-8 h-8 rounded-[var(--radius)] bg-[var(--surface-subtle)] border border-[var(--surface-border)] text-[var(--accent)] flex items-center justify-center shrink-0">
             <Landmark className="w-4 h-4" />
           </div>
-          <div>
-            <h1 className="font-serif text-[16px] sm:text-[17px] font-semibold text-[var(--text-primary)] leading-tight tracking-tight">
+          <div className="min-w-0 max-w-[260px] sm:max-w-[360px] lg:max-w-none">
+            <h1
+              className="font-serif text-[16px] sm:text-[17px] font-semibold text-[var(--text-primary)] leading-tight tracking-tight truncate"
+              title={defaultChurchSettings.churchName}
+            >
               {defaultChurchSettings.churchName}
             </h1>
-            <p className="text-[12px] text-[var(--text-secondary)] leading-none mt-0.5">
+            <p
+              className="text-[12px] text-[var(--text-secondary)] leading-none mt-0.5 truncate"
+              title={defaultChurchSettings.branchName}
+            >
               {defaultChurchSettings.branchName}
             </p>
           </div>
@@ -124,12 +131,15 @@ export const Header: React.FC<HeaderProps> = ({
             <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
           </button>
 
+          {/* Notification Centre Popover (Spec Section C5) */}
+          <NotificationCentrePopover />
+
           {/* User Manual Guide Button */}
           {onOpenUserManual && (
             <button
               onClick={onOpenUserManual}
               className="p-2 rounded-[var(--radius)] border border-[var(--surface-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
-              title="Platform User Manual (Word & PDF Guides)"
+              title="User manual"
               aria-label="Open User Manual"
             >
               <BookOpen className="w-4 h-4 text-[var(--accent)]" />

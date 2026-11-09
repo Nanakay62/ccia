@@ -17,6 +17,8 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ embedded: _embedde
   const {
     isOnline,
     isSyncing,
+    isCloudConnected,
+    isSupabaseReady,
     pendingUploadCount,
     needsAttentionCount,
     conflictsCount,
@@ -142,6 +144,21 @@ export const SyncIndicator: React.FC<SyncIndicatorProps> = ({ embedded: _embedde
                     </>
                   )}
                 </button>
+              </div>
+
+              <div className="flex items-center justify-between text-[var(--text-secondary)]">
+                <span>Cloud Backend:</span>
+                <span className={`font-semibold text-xs px-2 py-0.5 rounded ${
+                  isCloudConnected
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : isSupabaseReady
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                    : 'bg-slate-500/10 text-[var(--text-muted)]'
+                }`}>
+                  {isSupabaseReady
+                    ? (isCloudConnected ? 'Supabase Online' : (isDemoMode ? 'Demo Sandbox' : 'Local Queue'))
+                    : 'Local Mode'}
+                </span>
               </div>
 
               <div className="flex items-center justify-between text-[var(--text-secondary)]">

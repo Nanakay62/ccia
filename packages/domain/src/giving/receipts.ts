@@ -157,8 +157,8 @@ export function generatePrintableReceipt(params: ReceiptGeneratorParams): Printa
   return {
     receiptNumber: record.receiptNumber,
     date: record.serviceDate,
-    churchName: params.churchName || 'Accra Central Grace Chapel',
-    churchBranch: params.churchBranch || 'Accra Main Branch',
+    churchName: params.churchName || 'Calvary Crystal Church',
+    churchBranch: params.churchBranch || 'Main Branch',
     churchAddress: params.churchAddress || 'P.O. Box AN 1234, Accra North, Ghana',
     donorName: record.memberName || 'Anonymous Congregation Member',
     donorMemberNumber: record.memberNumber,

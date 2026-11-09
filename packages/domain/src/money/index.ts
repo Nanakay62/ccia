@@ -212,12 +212,10 @@ export function convertLineToBaseCurrency(
   const roundedBase = exactBase.round(0, Big.roundHalfEven);
   const baseAmountGhs = BigInt(roundedBase.toFixed(0));
 
-  // Rounding difference in fractional pesewas, scaled or flagged if non-zero
-  // Difference = exact - rounded
+  // Mathematical difference between exact product and rounded integer pesewas
   const diff = exactBase.minus(roundedBase);
-  const diffPesewas = diff.abs().gte(0.5)
-    ? BigInt(diff.round(0, Big.roundHalfEven).toFixed(0))
-    : 0n;
+  // Rounding difference in whole pesewas (0n if fractional part is rounded off)
+  const diffPesewas = BigInt(diff.round(0, Big.roundHalfEven).toFixed(0));
 
   return {
     originalAmount,

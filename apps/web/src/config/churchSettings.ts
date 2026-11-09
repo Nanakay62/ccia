@@ -24,13 +24,13 @@ export interface ChurchSettings {
 }
 
 export const defaultChurchSettings: ChurchSettings = {
-  churchName: 'Accra Central Grace Chapel',
-  branchName: 'Accra Central Branch',
-  shortName: 'CCIA Accra',
+  churchName: 'Calvary Crystal Church',
+  branchName: 'Main Branch',
+  shortName: 'Calvary Crystal',
   address: 'Ring Road Central, P.O. Box GP 4421, Accra, Ghana',
   country: 'Ghana',
   phone: '+233 30 222 3344 / +233 24 455 6677',
-  email: 'finance@accrachurch.org',
+  email: 'finance@calvarycrystal.org',
   taxRegNumber: 'TIN: C0004928172 • Charity Reg: DSW/7821',
   logoUrl: undefined, // Uses high-fidelity SVG seal if not set
   accentColor: '#1e4620', // Deep ecclesiastical forest green
@@ -49,14 +49,37 @@ export const defaultChurchSettings: ChurchSettings = {
  */
 export function formatDate(input: string | Date | undefined | null): string {
   if (!input) return '—';
+  // Parse manually if YYYY-MM-DD string to avoid timezone offset shifts
+  if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const [y, m, d] = input.split('-').map(Number);
+    if (y && m && d) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${String(d).padStart(2, '0')} ${months[m - 1]} ${y}`;
+    }
+  }
   const d = typeof input === 'string' ? new Date(input) : input;
   if (isNaN(d.getTime())) return String(input);
   
-  const day = d.getDate();
+  const day = String(d.getDate()).padStart(2, '0');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const month = months[d.getMonth()];
   const year = d.getFullYear();
   return `${day} ${month} ${year}`;
+}
+
+export function formatDateWithWeekday(input: string | Date | undefined | null): string {
+  if (!input) return '—';
+  let d: Date;
+  if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    const [y, m, day] = input.split('-').map(Number);
+    d = new Date(y!, m! - 1, day!);
+  } else {
+    d = typeof input === 'string' ? new Date(input) : input;
+  }
+  if (isNaN(d.getTime())) return String(input);
+  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const weekday = weekdays[d.getDay()];
+  return `${weekday}, ${formatDate(input)}`;
 }
 
 /**

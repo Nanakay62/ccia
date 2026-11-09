@@ -1,5 +1,6 @@
 import Big from 'big.js';
 import { toMajorUnitsString } from '../money/index.js';
+import { verifyLedgerHashChain } from '../security/hashChain.js';
 import type {
   Account,
   Fund,
@@ -66,6 +67,43 @@ export interface DoctorDiagnosticInput {
     readonly serverChecksum?: string;
     readonly missingOnClientIds?: readonly string[];
     readonly missingOnServerIds?: readonly string[];
+  };
+  readonly subledgerChecks?: {
+    readonly cashbookComparisons?: readonly {
+      readonly accountId: string;
+      readonly accountName: string;
+      readonly cashbookBalancePesewas: bigint;
+      readonly ledgerBalancePesewas: bigint;
+    }[];
+    readonly tithesControl?: {
+      readonly period: string;
+      readonly titheRecordsTotalPesewas: bigint;
+      readonly explainedUnallocatedPesewas: bigint;
+      readonly ledgerTithesIncomePesewas: bigint;
+    };
+    readonly assetRegisterComparison?: {
+      readonly activeCostPesewas: bigint;
+      readonly ledgerCostPesewas: bigint;
+      readonly activeAccDepPesewas: bigint;
+      readonly ledgerAccDepPesewas: bigint;
+    };
+    readonly countingSheetRefs?: readonly string[];
+    readonly voucherPaymentRefs?: readonly string[];
+    readonly bankReconciliations?: readonly {
+      readonly bankAccountName: string;
+      readonly lastSignedOffDate: string;
+      readonly referenceDate?: string;
+    }[];
+    readonly remittanceLiability?: {
+      readonly totalAccruedPesewas: bigint;
+      readonly totalPaidPesewas: bigint;
+      readonly ledgerRemittancePayablePesewas: bigint;
+    };
+    readonly hashChainCheck?: {
+      readonly isClean: boolean;
+      readonly brokenLinksCount: number;
+      readonly summary?: string;
+    };
   };
 }
 
@@ -785,6 +823,204 @@ export function diagnoseLedger(input: DoctorDiagnosticInput): DoctorReport {
         likelihoodScore: 98,
       });
       explainedDifference += (opDr - opCr);
+    }
+  }
+
+  // =========================================================================
+  // STEPS 11-16: SUB-LEDGER & MODULE INTEGRITY CHECKS (Section 5)
+  // =========================================================================
+  if (input.subledgerChecks) {
+    const sc = input.subledgerChecks;
+
+    // 11. Cashbook vs ledger: for each cash account, the cashbook closing balance equals the ledger balance
+    if (sc.cashbookComparisons) {
+      for (const cmp of sc.cashbookComparisons) {
+        const diff = cmp.cashbookBalancePesewas - cmp.ledgerBalancePesewas;
+        if (diff !== 0n) {
+          findings.push({
+            id: `finding-r11-cashbook-${cmp.accountId}`,
+            ruleNumber: 11,
+            severity: 'ERROR',
+            title: `Cashbook vs Ledger Discrepancy: ${cmp.accountName}`,
+            description: `Cashbook closing balance (GHS ${toMajorUnitsString(cmp.cashbookBalancePesewas)}) does not equal the general ledger balance (GHS ${toMajorUnitsString(cmp.ledgerBalancePesewas)}).`,
+            probableCause: `Unlinked manual journal entry posted directly to cash/bank control account or failed sub-ledger posting.`,
+            recommendedFix: `Reconcile ${cmp.accountName} lines in Cashbook against General Ledger and reverse unlinked manual entries.`,
+            evidence: {
+              amountsPesewas: [diff],
+              details: { accountId: cmp.accountId, accountName: cmp.accountName },
+            },
+            likelihoodScore: 96,
+          });
+        }
+      }
+    }
+
+    // 12. Tithes control: total of tithe records for a period equals the ledger balance of Tithes income
+    if (sc.tithesControl) {
+      const tc = sc.tithesControl;
+      const allocatedAndExplained = tc.titheRecordsTotalPesewas + tc.explainedUnallocatedPesewas;
+      const unallocatedDiff = tc.ledgerTithesIncomePesewas - allocatedAndExplained;
+      if (unallocatedDiff !== 0n) {
+        findings.push({
+          id: `finding-r12-tithes-${tc.period}`,
+          ruleNumber: 12,
+          severity: 'WARNING',
+          title: `Unallocated Tithes Control Difference (${tc.period})`,
+          description: `Total member tithe records plus explained anonymous tithes (GHS ${toMajorUnitsString(allocatedAndExplained)}) differ from the Tithes income account ledger balance (GHS ${toMajorUnitsString(tc.ledgerTithesIncomePesewas)}) by GHS ${toMajorUnitsString(unallocatedDiff)}.`,
+          probableCause: `Pending Sunday counting sheet tithe batch not yet allocated to individual member envelopes.`,
+          recommendedFix: `Open Tithes → Batches for ${tc.period} and allocate remaining envelope amounts or mark unreadable envelopes as explained anonymous.`,
+          evidence: {
+            amountsPesewas: [unallocatedDiff],
+            details: { period: tc.period },
+          },
+          likelihoodScore: 90,
+        });
+      }
+    }
+
+    // 13. Asset register vs ledger: total cost and accumulated depreciation equal control account balances
+    if (sc.assetRegisterComparison) {
+      const arc = sc.assetRegisterComparison;
+      const costDiff = arc.activeCostPesewas - arc.ledgerCostPesewas;
+      const accDepDiff = arc.activeAccDepPesewas - arc.ledgerAccDepPesewas;
+      if (costDiff !== 0n || accDepDiff !== 0n) {
+        findings.push({
+          id: `finding-r13-assets-reconciliation`,
+          ruleNumber: 13,
+          severity: 'ERROR',
+          title: `Fixed Asset Register vs General Ledger Out of Balance`,
+          description: `Active asset register cost diff: GHS ${toMajorUnitsString(costDiff)}; Accumulated depreciation diff: GHS ${toMajorUnitsString(accDepDiff)}.`,
+          probableCause: `Capital purchase voucher or depreciation journal posted without updating asset register sub-ledger.`,
+          recommendedFix: `Run Fixed Assets → Reports → Sub-Ledger Reconciliation to identify the category with the variance.`,
+          evidence: {
+            amountsPesewas: [costDiff !== 0n ? costDiff : accDepDiff],
+          },
+          likelihoodScore: 95,
+        });
+      }
+    }
+
+    // 14. No double posting: counting sheet line or voucher payment appears once in the ledger
+    if (sc.countingSheetRefs) {
+      const seenSheets = new Set<string>();
+      for (const ref of sc.countingSheetRefs) {
+        if (seenSheets.has(ref)) {
+          findings.push({
+            id: `finding-r14-double-cs-${ref}`,
+            ruleNumber: 14,
+            severity: 'ERROR',
+            title: `Double-Posted Counting Sheet: ${ref}`,
+            description: `Counting sheet ${ref} appears more than once in general ledger postings.`,
+            probableCause: `Counting sheet was manually re-entered in Cashbook after automatic posting.`,
+            recommendedFix: `Reverse the duplicate manual receipt entry in Cashbook.`,
+            evidence: { documentNumbers: [ref] },
+            likelihoodScore: 99,
+          });
+        }
+        seenSheets.add(ref);
+      }
+    }
+
+    if (sc.voucherPaymentRefs) {
+      const seenVouchers = new Set<string>();
+      for (const vRef of sc.voucherPaymentRefs) {
+        if (seenVouchers.has(vRef)) {
+          findings.push({
+            id: `finding-r14-double-pv-${vRef}`,
+            ruleNumber: 14,
+            severity: 'ERROR',
+            title: `Double-Posted Payment Voucher: ${vRef}`,
+            description: `Payment voucher ${vRef} has multiple disbursement postings in the ledger.`,
+            probableCause: `Voucher was paid twice in Cashbook or Expenses.`,
+            recommendedFix: `Reverse the duplicate payment journal entry.`,
+            evidence: { documentNumbers: [vRef] },
+            likelihoodScore: 99,
+          });
+        }
+        seenVouchers.add(vRef);
+      }
+    }
+
+    // 15. Bank reconciliation currency: last signed-off reconciliation within 35 days (warning, non-blocking)
+    if (sc.bankReconciliations) {
+      for (const br of sc.bankReconciliations) {
+        const refDate = new Date(br.referenceDate || new Date().toISOString().slice(0, 10));
+        const signedDate = new Date(br.lastSignedOffDate);
+        const diffDays = Math.floor((refDate.getTime() - signedDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 35) {
+          findings.push({
+            id: `finding-r15-stale-recon-${br.bankAccountName}`,
+            ruleNumber: 15,
+            severity: 'WARNING',
+            title: `Bank Reconciliation Overdue (${diffDays} days): ${br.bankAccountName}`,
+            description: `Last signed-off bank reconciliation for ${br.bankAccountName} was on ${br.lastSignedOffDate} (${diffDays} days ago, exceeding the 35-day threshold).`,
+            probableCause: `Monthly bank statement has not yet been imported or signed off for the prior month.`,
+            recommendedFix: `Open Cashbook → Bank Reconciliation and complete statement matching for ${br.bankAccountName}.`,
+            evidence: { dates: [br.lastSignedOffDate] },
+            likelihoodScore: 85,
+          });
+        }
+      }
+    }
+
+    // 16. Remittance liability: remittance payable equals accrued less paid
+    if (sc.remittanceLiability) {
+      const rl = sc.remittanceLiability;
+      const expectedPayable = rl.totalAccruedPesewas - rl.totalPaidPesewas;
+      const diff = expectedPayable - rl.ledgerRemittancePayablePesewas;
+      if (diff !== 0n) {
+        findings.push({
+          id: `finding-r16-remittance-liability`,
+          ruleNumber: 16,
+          severity: 'ERROR',
+          title: `Tithe Remittance Liability Mismatch`,
+          description: `Sub-ledger net remittance payable (Accrued less Paid = GHS ${toMajorUnitsString(expectedPayable)}) does not match the Remittances Payable ledger balance (GHS ${toMajorUnitsString(rl.ledgerRemittancePayablePesewas)}).`,
+          probableCause: `Remittance payment voucher was posted to an expense account instead of clearing the Remittances Payable liability account.`,
+          recommendedFix: `Reconcile Tithes → Remittance schedule against Account 2120 (Remittances Payable).`,
+          evidence: { amountsPesewas: [diff] },
+          likelihoodScore: 94,
+        });
+      }
+    }
+  }
+
+  // 17. General ledger hash-chain anti-tampering (SHA-256 cryptographic link verification)
+  const sc = input.subledgerChecks;
+  if (sc?.hashChainCheck) {
+    if (!sc.hashChainCheck.isClean) {
+      findings.push({
+        id: 'finding-r17-hash-chain-tamper',
+        ruleNumber: 17,
+        severity: 'ERROR',
+        title: 'General Ledger Anti-Tampering Hash-Chain Broken',
+        description: `Cryptographic audit check detected ${sc.hashChainCheck.brokenLinksCount} broken links or modified entries in the general ledger. ${sc.hashChainCheck.summary || ''}`,
+        probableCause: 'Direct database edit, deleted entry, or unauthorized schema modification post-signing.',
+        recommendedFix: 'Freeze all postings, inspect Security Events log, and verify database against the latest verified backup.',
+        evidence: { details: { brokenLinksCount: sc.hashChainCheck.brokenLinksCount } },
+        likelihoodScore: 99,
+      });
+    }
+  } else {
+    // Automatic on-the-fly verification if entries have cryptographic signatures or hash-chains
+    const chainedEntries = (input.entries || []).filter((e) => (e as any).entryHash || (e as any).prevHash);
+    if (chainedEntries.length > 0) {
+      const hashResult = verifyLedgerHashChain(chainedEntries as any);
+      if (!hashResult.isClean) {
+        findings.push({
+          id: 'finding-r17-hash-chain-tamper',
+          ruleNumber: 17,
+          severity: 'ERROR',
+          title: 'General Ledger Anti-Tampering Hash-Chain Broken',
+          description: `Cryptographic verification detected ${hashResult.brokenLinks.length} broken links or corrupted entry hashes in the general ledger.`,
+          probableCause: 'Journal entry content (amounts, lines, dates) altered outside normal posting workflow.',
+          recommendedFix: 'Review the cryptographic audit trail, audit log, and restore from the last clean backup archive.',
+          evidence: {
+            documentNumbers: hashResult.brokenLinks.map((b) => b.documentNumber),
+            details: { brokenLinks: hashResult.brokenLinks },
+          },
+          likelihoodScore: 99,
+        });
+      }
     }
   }
 

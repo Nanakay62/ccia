@@ -8,7 +8,6 @@ import {
   Users,
   BarChart3,
   Stethoscope,
-  Settings,
   ShieldAlert,
   ShieldCheck,
   FileText,
@@ -173,65 +172,4 @@ export const DoctorView: React.FC = () => (
   </div>
 );
 
-import { BackupRestoreCard } from './settings/BackupRestoreCard.js';
-import { downloadUserManualWord, printUserManualPdf } from '../utils/exports/userManualGenerator.js';
-import { Download, Printer } from 'lucide-react';
-
-export const SettingsView: React.FC = () => (
-  <div className="space-y-6">
-    <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-      <div className="flex items-center gap-2 text-blue-600 font-bold text-lg">
-        <Settings className="w-6 h-6" />
-        <h2>System Administration & Append-Only Audit Log</h2>
-      </div>
-      <p className="text-sm text-slate-600 dark:text-slate-400">
-        Manage church users, device prefixes, local encrypted backup exports, and inspect the immutable audit log.
-      </p>
-    </div>
-
-    {/* Platform Documentation & User Manual Card */}
-    <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-      <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-        <div className="flex items-center gap-2 text-[var(--accent)] font-bold text-base">
-          <BookOpen className="w-5 h-5" />
-          <h3>Official Platform User Manual & Accounting Standard Operating Procedures</h3>
-        </div>
-        <span className="text-xs px-2 py-0.5 rounded bg-[var(--accent-subtle)] text-[var(--accent)] font-bold">
-          v2.0 GHS/USD
-        </span>
-      </div>
-      <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-        Comprehensive operational documentation covering the double-entry invariant, role-based segregation of duties, cash counting protocols, Ghana WHT statutory withholding, staff payroll, and disaster recovery. Available in Microsoft Word (.doc) and PDF formats.
-      </p>
-      <div className="flex flex-wrap items-center gap-3 pt-2">
-        <button
-          onClick={() => downloadUserManualWord(false)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold hover:bg-blue-100 transition shadow-sm"
-        >
-          <Download className="w-4 h-4" />
-          <span>Download User Manual (Word .doc)</span>
-        </button>
-
-        <button
-          onClick={() => printUserManualPdf(false)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-xs font-semibold transition shadow-sm"
-        >
-          <Printer className="w-4 h-4" />
-          <span>Print / Save PDF Manual</span>
-        </button>
-
-        <a
-          href="/docs/CCIA_Church_Accounting_Platform_User_Manual.pdf"
-          download="CCIA_Church_Accounting_Platform_User_Manual.pdf"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-semibold transition"
-        >
-          <FileText className="w-4 h-4 text-rose-500" />
-          <span>Direct PDF Download</span>
-        </a>
-      </div>
-    </div>
-
-    {/* Encrypted Backup & Multi-Device Simulation */}
-    <BackupRestoreCard />
-  </div>
-);
+export { SettingsView } from './settings/SettingsView.js';

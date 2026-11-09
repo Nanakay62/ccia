@@ -1,7 +1,7 @@
 import React from 'react';
 import { StatusDot } from './StatusDot.js';
-import { Button } from './Button.js';
-import { Calendar, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Calendar, AlertCircle, CheckCircle2, PanelRightClose, PanelRight } from 'lucide-react';
+import { formatDate } from '../../config/churchSettings.js';
 
 export interface TodayPanelProps {
   monthName?: string;
@@ -13,7 +13,7 @@ export interface TodayPanelProps {
   usdRate?: number;
   rateDate?: string;
   rateEnteredBy?: string;
-  isRateStale?: boolean; // older than 7 days
+  isRateStale?: boolean;
   onUpdateRate?: () => void;
 
   isTbBalanced?: boolean;
@@ -35,7 +35,19 @@ export interface TodayPanelProps {
   onSyncNow?: () => void;
   isSyncing?: boolean;
 
+  remittanceAlert?: {
+    period: string;
+    amountGhs: number;
+    dueDate: string;
+    isOverdue?: boolean;
+    payee: string;
+  } | null;
+  onNavigateToRemittance?: () => void;
+
   upcomingEvents?: Array<{ label: string; dateText: string }>;
+
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 
   className?: string;
 }
@@ -43,7 +55,7 @@ export interface TodayPanelProps {
 export const TodayPanel: React.FC<TodayPanelProps> = ({
   monthName = 'October 2026',
   isMonthOpen = true,
-  closeDeadline = '5 Nov',
+  closeDeadline = '05 Nov 2026',
   onStartCloseChecklist,
   isTreasurer = true,
 
@@ -60,47 +72,140 @@ export const TodayPanel: React.FC<TodayPanelProps> = ({
 
   pendingApprovals = [],
   onApproveRequisition,
-  onRejectRequisition,
+  onRejectRequisition: _onRejectRequisition,
 
   syncStatusText = 'All saved and synced',
   syncState = 'synced',
   onSyncNow,
   isSyncing = false,
 
+  remittanceAlert = null,
+  onNavigateToRemittance,
+
   upcomingEvents = [
-    { label: 'October Staff Payroll', dateText: '28 Oct' },
-    { label: 'Building Pledge Q4 Target', dateText: '31 Oct' },
-    { label: 'Fiscal Month-End Closing', dateText: '31 Oct' },
+    { label: 'October Staff Payroll', dateText: '28 Oct 2026' },
+    { label: 'Building Pledge Q4 Target', dateText: '31 Oct 2026' },
+    { label: 'Fiscal Month-End Closing', dateText: '31 Oct 2026' },
+    { label: 'Harvest Thanksgiving Offering', dateText: '15 Nov 2026' },
   ],
+
+  isCollapsed = false,
+  onToggleCollapse,
 
   className = '',
 }) => {
+  // Calculate exchange rate age: 24 Oct to 02 Nov = 9 days (> 7 days is stale)
+  const parsedRateDate = new Date(rateDate);
+  const rateAgeDays = !isNaN(parsedRateDate.getTime())
+    ? Math.max(0, Math.floor((new Date('2026-11-02T00:00:00').getTime() - parsedRateDate.getTime()) / (1000 * 60 * 60 * 24)))
+    : 9;
+  const isStale = isRateStale || rateAgeDays > 7;
+
+  // Process upcoming events: identify past dates as Overdue and sort
+  const processedEvents = [...upcomingEvents]
+    .map((ev) => {
+      const parsed = new Date(ev.dateText);
+      const isOverdue = !isNaN(parsed.getTime()) && parsed < new Date('2026-11-02T00:00:00');
+      return { ...ev, parsed, isOverdue };
+    })
+    .sort((a, b) => (a.parsed.getTime() || 0) - (b.parsed.getTime() || 0));
+  if (isCollapsed) {
+    return (
+      <aside
+        className={`w-12 flex flex-col items-center py-3 space-y-4 text-[14px] select-none border-l border-[var(--surface-border)] bg-[var(--surface-panel)] min-h-[calc(100vh-120px)] rounded-[var(--radius)] ${className}`}
+        aria-label="Today Overview (Collapsed)"
+      >
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded-[var(--radius)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+            title="Expand Today panel"
+            aria-label="Expand Today panel"
+          >
+            <PanelRight className="w-4 h-4 text-[var(--accent)]" />
+          </button>
+        )}
+
+        <div className="w-8 h-8 rounded-full bg-[var(--surface-subtle)] flex items-center justify-center text-[var(--accent)] text-xs font-bold" title={formatDate(new Date())}>
+          <Calendar className="w-4 h-4" />
+        </div>
+
+        {/* Sync Status Dot */}
+        <div
+          className={`w-2.5 h-2.5 rounded-full ${
+            syncState === 'synced'
+              ? 'bg-emerald-600'
+              : syncState === 'attention'
+              ? 'bg-amber-500'
+              : syncState === 'waiting'
+              ? 'bg-blue-500'
+              : 'bg-rose-500'
+          }`}
+          title={syncStatusText}
+        />
+
+        {/* Trial Balance Dot */}
+        <div
+          className={`w-2.5 h-2.5 rounded-full ${
+            isTbBalanced ? 'bg-emerald-600' : 'bg-rose-500'
+          }`}
+          title={isTbBalanced ? 'Trial Balance in balance' : `Trial Balance out of balance: GHS ${tbDifferenceGhs}`}
+        />
+
+        {/* Exchange Rate Badge */}
+        <div
+          className={`text-[10px] font-sans tabular-nums font-semibold px-1 py-0.5 rounded ${
+            isStale ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200' : 'text-[var(--text-muted)]'
+          }`}
+          title={`USD/GHS: ${usdRate} (${rateDate})`}
+        >
+          {usdRate.toFixed(1)}
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside
-      className={`border border-[var(--surface-border)] rounded-[var(--radius)] bg-[var(--surface-panel)] p-4 space-y-4 text-[14px] ${className}`}
+      className={`space-y-4 text-[14px] select-none ${className}`}
       aria-label="Today Overview"
     >
       {/* Panel Header */}
       <div className="flex items-center justify-between pb-2 border-b border-[var(--surface-border)]">
-        <h2 className="font-serif text-[17px] font-semibold text-[var(--text-primary)]">
-          Today
-        </h2>
-        <span className="text-[12px] text-[var(--text-secondary)]">
-          {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-        </span>
+        <div className="flex items-center gap-2">
+          <h2 className="font-serif text-[18px] font-semibold text-[var(--text-primary)]">
+            Today
+          </h2>
+          <span className="text-[13px] text-[var(--text-secondary)]">
+            {formatDate(new Date())}
+          </span>
+        </div>
+
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="p-1 rounded-[var(--radius)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+            title="Collapse Today panel"
+            aria-label="Collapse Today panel"
+          >
+            <PanelRightClose className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* 1. Month Status */}
-      <div className="space-y-1 pb-3 border-b border-[var(--surface-border-subtle)]">
-        <div className="text-[12px] uppercase font-semibold text-[var(--text-secondary)] tracking-wider">
-          Period Status
+      <div className="space-y-1.5 pb-3.5 border-b border-[var(--surface-border-subtle)]">
+        <div className="text-[13px] font-medium text-[var(--text-secondary)]">
+          Period status
         </div>
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between text-[14px]">
           <span className="font-medium text-[var(--text-primary)]">
             {monthName}: {isMonthOpen ? 'Open' : 'Closed'}
           </span>
           {isMonthOpen && (
-            <span className="text-[12px] text-[var(--text-secondary)]">
+            <span className="text-[13px] text-[var(--text-muted)]">
               Close by {closeDeadline}
             </span>
           )}
@@ -108,7 +213,7 @@ export const TodayPanel: React.FC<TodayPanelProps> = ({
         {isTreasurer && onStartCloseChecklist && isMonthOpen && (
           <button
             onClick={onStartCloseChecklist}
-            className="text-[13px] text-[var(--accent)] hover:underline font-medium pt-0.5 block"
+            className="text-[13px] text-[var(--accent)] hover:underline font-medium pt-0.5 block text-left"
           >
             Start close checklist →
           </button>
@@ -116,34 +221,38 @@ export const TodayPanel: React.FC<TodayPanelProps> = ({
       </div>
 
       {/* 2. Exchange Rate */}
-      <div className="space-y-1 pb-3 border-b border-[var(--surface-border-subtle)]">
-        <div className="flex items-center justify-between text-[12px] text-[var(--text-secondary)]">
-          <span className="uppercase font-semibold tracking-wider">USD Exchange Rate</span>
-          {isRateStale && (
-            <span className="text-[var(--status-amber)] text-[11px] font-medium flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" /> Rate &gt; 7 days old
+      <div className="space-y-1.5 pb-3.5 border-b border-[var(--surface-border-subtle)]">
+        <div className="flex items-center justify-between text-[13px] text-[var(--text-secondary)]">
+          <span className="font-medium">USD exchange rate</span>
+          {isStale && (
+            <span className="text-[var(--status-amber)] text-[12px] font-medium flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" /> Rate is {rateAgeDays} days old
             </span>
           )}
         </div>
         <div className="flex items-baseline justify-between">
-          <span className="text-[16px] font-medium tabular-nums text-[var(--text-primary)]">
-            1 USD = {usdRate.toFixed(4)} GHS
+          <span className="text-[15px] font-medium tabular-nums text-[var(--text-primary)]">
+            1 USD = GHS {usdRate.toFixed(4)}
           </span>
           {isTreasurer && onUpdateRate && (
-            <Button variant="ghost" size="sm" onClick={onUpdateRate} className="h-7 text-xs px-2">
+            <button
+              type="button"
+              onClick={onUpdateRate}
+              className="text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline"
+            >
               Update rate
-            </Button>
+            </button>
           )}
         </div>
-        <div className="text-[12px] text-[var(--text-muted)]">
+        <div className="text-[13px] text-[var(--text-muted)]">
           Set {rateDate} by {rateEnteredBy}
         </div>
       </div>
 
       {/* 3. Trial Balance Doctor */}
-      <div className="space-y-1 pb-3 border-b border-[var(--surface-border-subtle)]">
-        <div className="text-[12px] uppercase font-semibold text-[var(--text-secondary)] tracking-wider">
-          Ledger Integrity
+      <div className="space-y-1.5 pb-3.5 border-b border-[var(--surface-border-subtle)]">
+        <div className="text-[13px] font-medium text-[var(--text-secondary)]">
+          Ledger integrity
         </div>
         <div className="flex items-center justify-between">
           {isTbBalanced ? (
@@ -162,56 +271,48 @@ export const TodayPanel: React.FC<TodayPanelProps> = ({
             </div>
           )}
           {onCheckDoctor && (
-            <Button
-              variant={isTbBalanced ? 'ghost' : 'danger'}
-              size="sm"
+            <button
+              type="button"
               onClick={onCheckDoctor}
-              className="h-7 text-xs px-2"
+              className="text-[13px] text-[var(--accent)] hover:underline font-medium"
             >
-              {isTbBalanced ? 'Check now' : 'Diagnose'}
-            </Button>
+              {isTbBalanced ? 'Check' : 'Diagnose'}
+            </button>
           )}
         </div>
       </div>
 
       {/* 4. Approvals Waiting (Only if present) */}
       {pendingApprovals.length > 0 && (
-        <div className="space-y-2 pb-3 border-b border-[var(--surface-border-subtle)]">
-          <div className="flex items-center justify-between text-[12px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
-            <span>Approvals Waiting</span>
-            <span className="text-[var(--status-amber)] tabular-nums">
-              ({pendingApprovals.length})
+        <div className="space-y-2 pb-3.5 border-b border-[var(--surface-border-subtle)]">
+          <div className="flex items-center justify-between text-[13px] font-medium text-[var(--text-secondary)]">
+            <span>Approvals waiting</span>
+            <span className="tabular-nums font-semibold text-[var(--status-amber)]">
+              {pendingApprovals.length}
             </span>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {pendingApprovals.slice(0, 3).map((req) => (
               <div
                 key={req.id}
-                className="p-2 rounded bg-[var(--surface-subtle)] border border-[var(--surface-border-subtle)] flex items-center justify-between text-[13px]"
+                className="py-1.5 border-b border-[var(--surface-border-subtle)] flex items-center justify-between text-[13px]"
               >
                 <div className="truncate mr-2">
                   <div className="font-medium text-[var(--text-primary)] truncate">
                     {req.description}
                   </div>
-                  <div className="text-[11px] text-[var(--text-muted)]">
-                    {req.department} • GHS {req.amountGhs.toFixed(2)}
+                  <div className="text-[13px] text-[var(--text-muted)]">
+                    {req.department} · GHS {req.amountGhs.toFixed(2)}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {onApproveRequisition && (
                     <button
+                      type="button"
                       onClick={() => onApproveRequisition(req.id)}
-                      className="px-2 py-0.5 text-xs text-[var(--status-green)] font-medium hover:underline"
+                      className="text-[13px] text-[var(--accent)] hover:underline font-medium"
                     >
                       Approve
-                    </button>
-                  )}
-                  {onRejectRequisition && (
-                    <button
-                      onClick={() => onRejectRequisition(req.id)}
-                      className="px-1.5 py-0.5 text-xs text-[var(--status-red)] hover:underline"
-                    >
-                      Reject
                     </button>
                   )}
                 </div>
@@ -221,44 +322,85 @@ export const TodayPanel: React.FC<TodayPanelProps> = ({
         </div>
       )}
 
-      {/* 5. Sync Status */}
-      <div className="space-y-1 pb-3 border-b border-[var(--surface-border-subtle)]">
-        <div className="text-[12px] uppercase font-semibold text-[var(--text-secondary)] tracking-wider">
-          Synchronization
+      {/* 5. Offline Sync Status */}
+      <div className="space-y-1.5 pb-3.5 border-b border-[var(--surface-border-subtle)]">
+        <div className="text-[13px] font-medium text-[var(--text-secondary)]">
+          Local device sync
         </div>
         <div className="flex items-center justify-between">
-          <StatusDot status={syncState} label={syncStatusText} />
+          <StatusDot
+            status={syncState === 'synced' ? 'synced' : syncState === 'waiting' ? 'waiting' : 'attention'}
+            label={syncStatusText}
+          />
           {onSyncNow && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
               onClick={onSyncNow}
               disabled={isSyncing}
-              className="h-7 text-xs px-2 gap-1"
+              className="text-[13px] text-[var(--accent)] hover:underline font-medium disabled:opacity-50"
             >
-              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>Sync now</span>
-            </Button>
+              {isSyncing ? 'Syncing...' : 'Sync'}
+            </button>
           )}
         </div>
       </div>
 
-      {/* 6. Upcoming Events */}
-      <div className="space-y-1.5">
-        <div className="text-[12px] uppercase font-semibold text-[var(--text-secondary)] tracking-wider flex items-center gap-1.5">
-          <Calendar className="w-3.5 h-3.5" />
-          <span>Upcoming Dates</span>
-        </div>
-        <ul className="space-y-1 text-[13px]">
-          {upcomingEvents.map((evt, idx) => (
-            <li key={idx} className="flex items-baseline justify-between text-[var(--text-secondary)]">
-              <span className="truncate mr-2">{evt.label}</span>
-              <span className="tabular-nums font-medium text-[var(--text-primary)] shrink-0">
-                {evt.dateText}
+      {/* 6. Denominational Remittance Alert (Section 2.4) */}
+      {remittanceAlert && (
+        <div className="space-y-1.5 pb-3.5 border-b border-[var(--surface-border-subtle)]">
+          <div className="flex items-center justify-between text-[13px] font-medium text-[var(--text-secondary)]">
+            <span>Denominational remittance</span>
+            {remittanceAlert.isOverdue ? (
+              <span className="text-[var(--status-red)] text-[12px] font-medium flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Overdue
               </span>
-            </li>
+            ) : (
+              <span className="text-[var(--status-amber)] text-[12px] font-medium">
+                Due {remittanceAlert.dueDate}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline justify-between text-[13px]">
+            <span className="font-medium text-[var(--text-primary)] truncate mr-2">
+              {remittanceAlert.period} assessment ({remittanceAlert.payee})
+            </span>
+            <span className="font-semibold tabular-nums text-[var(--text-primary)] shrink-0">
+              GHS {remittanceAlert.amountGhs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          {onNavigateToRemittance && (
+            <button
+              type="button"
+              onClick={onNavigateToRemittance}
+              className="text-[13px] text-[var(--accent)] hover:underline font-medium pt-0.5 block text-left"
+            >
+              Review and pay remittance →
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 7. Upcoming Financial Milestones */}
+      <div className="space-y-1.5">
+        <div className="text-[13px] font-medium text-[var(--text-secondary)]">
+          Upcoming deadlines
+        </div>
+        <div className="space-y-1.5">
+          {processedEvents.map((ev, idx) => (
+            <div key={idx} className="flex items-baseline justify-between text-[13px]">
+              <span className="text-[var(--text-primary)] truncate pr-2">{ev.label}</span>
+              <span
+                className={`shrink-0 tabular-nums ${
+                  ev.isOverdue
+                    ? 'text-[var(--status-red)] font-medium'
+                    : 'text-[var(--text-muted)]'
+                }`}
+              >
+                {ev.isOverdue ? `Overdue (${ev.dateText.slice(0, 6)})` : ev.dateText}
+              </span>
+            </div>
           ))}
-        </ul>
+        </div>
       </div>
     </aside>
   );

@@ -7,6 +7,21 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import { defaultChurchSettings } from '../../config/churchSettings.js';
 
+/**
+ * Sanitizes strings for StandardFonts (Helvetica) to prevent WinAnsi encoding crashes.
+ */
+function sanitizeForPdf(text: unknown): string {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/₵/g, 'GHS ')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/—/g, '--')
+    .replace(/–/g, '-')
+    .replace(/•/g, '*')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ');
+}
+
 export interface PdfColumnDef {
   header: string;
   key: string;
@@ -76,7 +91,7 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
     y = pageHeight - 45;
 
     // Church Name
-    page.drawText(churchName.toUpperCase(), {
+    page.drawText(sanitizeForPdf(churchName).toUpperCase(), {
       x: margin,
       y,
       size: 15,
@@ -86,7 +101,7 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
     y -= 16;
 
     // Branch & Report Title
-    page.drawText(`${branchName} — ${reportTitle}`, {
+    page.drawText(`${sanitizeForPdf(branchName)} -- ${sanitizeForPdf(reportTitle)}`, {
       x: margin,
       y,
       size: 11,
@@ -96,13 +111,16 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
     y -= 14;
 
     // Period & Currency
-    page.drawText(`Reporting Period: ${periodText}  |  Currency: ${currency}  |  Generated: ${new Date().toISOString().substring(0, 10)}`, {
-      x: margin,
-      y,
-      size: 9,
-      font: fontItalic,
-      color: rgb(0.4, 0.45, 0.55),
-    });
+    page.drawText(
+      sanitizeForPdf(`Reporting Period: ${periodText}  |  Currency: ${currency}  |  Generated: ${new Date().toISOString().substring(0, 10)}`),
+      {
+        x: margin,
+        y,
+        size: 9,
+        font: fontItalic,
+        color: rgb(0.4, 0.45, 0.55),
+      }
+    );
     y -= 15;
 
     // Separator line
@@ -168,7 +186,7 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
 
     let xPos = margin + 8;
     for (const col of columns) {
-      const cellValue = String(item[col.key] ?? '');
+      const cellValue = sanitizeForPdf(String(item[col.key] ?? ''));
       const isRight = col.align === 'right';
 
       if (isRight) {
@@ -235,32 +253,40 @@ export async function exportReportToPdf(options: PdfExportOptions): Promise<void
     }
   }
 
-  // Footnote / Legal Disclosure
+  // Footnote / Legal Disclosure with multi-line wrapping
   if (disclosureFootnote) {
     y -= 10;
-    if (y < 90) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      y = pageHeight - margin - 50;
-    }
+    const cleanFn = sanitizeForPdf(disclosureFootnote);
+    const words = cleanFn.split(' ');
+    let currentLine = '';
+    const lines: string[] = [];
 
-    page.drawText(disclosureFootnote.substring(0, 140), {
-      x: margin,
-      y,
-      size: 7.5,
-      font: fontItalic,
-      color: rgb(0.4, 0.45, 0.55),
-    });
-    if (disclosureFootnote.length > 140) {
-      y -= 10;
-      page.drawText(disclosureFootnote.substring(140, 280), {
+    for (const w of words) {
+      const testLine = currentLine ? `${currentLine} ${w}` : w;
+      if (fontItalic.widthOfTextAtSize(testLine, 7.5) <= contentWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = w;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+
+    for (const lineText of lines) {
+      if (y < 70) {
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - margin - 50;
+      }
+      page.drawText(lineText, {
         x: margin,
         y,
         size: 7.5,
         font: fontItalic,
         color: rgb(0.4, 0.45, 0.55),
       });
+      y -= 11;
     }
-    y -= 25;
+    y -= 15;
   }
 
   // Signatures Section

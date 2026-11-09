@@ -15,6 +15,7 @@ export interface SignerInfo {
   role: string;
   date?: string;
   signaturePlaceholder?: string; // e.g. "(Signed Digitally)" or empty
+  isSigned?: boolean;
 }
 
 interface DualSignatureBlockProps {
@@ -23,6 +24,7 @@ interface DualSignatureBlockProps {
   thirdSigner?: SignerInfo;
   showStampBox?: boolean;
   notes?: string;
+  footerText?: string;
   className?: string;
 }
 
@@ -32,6 +34,7 @@ export const DualSignatureBlock: React.FC<DualSignatureBlockProps> = ({
   thirdSigner,
   showStampBox = true,
   notes,
+  footerText,
   className = '',
 }) => {
   const signers = [
@@ -78,9 +81,13 @@ export const DualSignatureBlock: React.FC<DualSignatureBlockProps> = ({
               <div className="text-[11px] font-medium text-[var(--text-secondary)] print:text-slate-700">
                 {signer.role}
               </div>
-              {signer.date && (
+              {signer.date ? (
                 <div className="text-[10.5px] text-[var(--text-muted)] print:text-slate-600">
                   Date: <span className="font-medium text-[var(--text-primary)] print:text-black">{signer.date}</span>
+                </div>
+              ) : (
+                <div className="text-[10.5px] text-[var(--text-muted)] print:text-slate-600">
+                  Date: <span className="font-medium text-[var(--text-muted)] print:text-slate-500">_______________</span>
                 </div>
               )}
             </div>
@@ -102,7 +109,7 @@ export const DualSignatureBlock: React.FC<DualSignatureBlockProps> = ({
 
       {/* Legal accounting footer note */}
       <div className="mt-6 pt-2 border-t border-[var(--surface-border)]/60 text-[10px] text-[var(--text-muted)] flex flex-col sm:flex-row justify-between items-center gap-1 print:text-slate-600">
-        <span>This is a formal accounting record of Christ Church of Grace, Adabraka.</span>
+        <span>{footerText || 'Source: church ledger. Official accounting record.'}</span>
         <span>Dual signature required for audit compliance and internal controls.</span>
       </div>
     </div>

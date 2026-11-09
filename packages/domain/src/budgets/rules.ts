@@ -128,6 +128,10 @@ export function reviseBudget(budget: Budget, input: ReviseBudgetInput): Budget {
   const lineMap = new Map(budget.lines.map((l) => [l.accountCode, l]));
 
   for (const update of input.updatedLines) {
+    if (update.newAmountPesewas < 0n) {
+      throw new Error(`Revised budget amount cannot be negative for account ${update.accountCode}`);
+    }
+
     const existing = lineMap.get(update.accountCode);
     if (!existing) continue;
 

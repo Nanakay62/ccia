@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { useDemo, GuidedTask } from '../../context/DemoContext.js';
+import { defaultChurchSettings } from '../../config/churchSettings.js';
 import { Button } from '../ui/Button.js';
 import {
   Compass,
@@ -65,7 +66,7 @@ export const DemoWizardCard: React.FC<DemoWizardCardProps> = ({ onNavigate }) =>
               </span>
             </div>
             <p className="text-[13.5px] text-[var(--text-secondary)] mt-1 max-w-2xl leading-relaxed">
-              You are working with sample data for <strong className="text-[var(--text-primary)]">Christ Church of Grace, Adabraka</strong>. Nothing you do here affects the real church accounts. Explore freely, or follow the guided tasks below.
+              You are working with sample data for <strong className="text-[var(--text-primary)]">{defaultChurchSettings.churchName} ({defaultChurchSettings.branchName})</strong>. Nothing you do here affects the real church accounts. Explore freely, or follow the guided tasks below.
             </p>
           </div>
         </div>

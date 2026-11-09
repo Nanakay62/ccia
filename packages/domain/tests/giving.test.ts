@@ -116,6 +116,59 @@ describe('Phase 4: Automatic Balanced Journal Entry Generation from Counting She
     expect(entry.totalDebitGhs).toBe(entry.totalCreditGhs); // Exactly balanced!
     expect(entry.lines.length).toBe(5); // 3 debits (Cash, Bank, MoMo) + 2 credits (Tithes, Offering)
   });
+
+  it('generates balanced multi-fund entry with interfund clearing lines (Account 2020)', () => {
+    const sheet: CountingSheet = {
+      id: 'cs-multi-fund-01',
+      branchId: '00000000-0000-0000-0000-000000000001',
+      sheetNumber: 'CS-CNT-000102',
+      serviceDate: '2026-10-25',
+      serviceType: 'Sunday Combined Service',
+      cashDenominationsGhs: [{ denomination: 200, count: 25 }], // 500,000p (GHS 5,000.00)
+      cashDenominationsUsd: [],
+      cheques: [],
+      momoTransactions: [],
+      fundAllocations: [
+        { fundId: 'fund-gen', fundName: 'General Fund', category: 'Tithe', amountPesewas: 300000n, currency: 'GHS' }, // GHS 3,000
+        { fundId: 'fund-bld', fundName: 'Building Fund', category: 'Building Offering', amountPesewas: 200000n, currency: 'GHS' }, // GHS 2,000
+      ],
+      firstCounterId: 'user-counter-1',
+      firstCounterName: 'Brother Emmanuel',
+      firstSignedAt: '2026-10-25T13:00:00Z',
+      secondCounterId: 'user-counter-2',
+      secondCounterName: 'Sister Grace',
+      secondSignedAt: '2026-10-25T13:05:00Z',
+      status: 'SUBMITTED',
+      totalCashGhsPesewas: 500000n,
+      totalCashUsdCents: 0n,
+      totalChequesGhsPesewas: 0n,
+      totalMomoGhsPesewas: 0n,
+      grandTotalGhsPesewas: 500000n,
+      grandTotalUsdCents: 0n,
+    };
+
+    const entry = generateJournalEntryFromCountingSheet({
+      sheet,
+      branchId: '00000000-0000-0000-0000-000000000001',
+      documentNumber: 'JE-CS-000102',
+      createdBy: 'Brother Emmanuel',
+      deviceId: 'DEV-CNT-01',
+    });
+
+    expect(entry.totalDebitGhs).toBe(entry.totalCreditGhs);
+    // General fund: Debit Cash 500,000p; Credit Tithe 300,000p; Credit Due To Building Fund (2020) 200,000p -> Net 0
+    // Building fund: Credit Building Offering 200,000p; Debit Due From General Fund (2020) 200,000p -> Net 0
+    const genLines = entry.lines.filter((l) => l.fundId === 'fund-gen');
+    const bldLines = entry.lines.filter((l) => l.fundId === 'fund-bld');
+
+    const genDebit = genLines.reduce((s, l) => s + l.debitAmountGhs, 0n);
+    const genCredit = genLines.reduce((s, l) => s + l.creditAmountGhs, 0n);
+    expect(genDebit).toBe(genCredit);
+
+    const bldDebit = bldLines.reduce((s, l) => s + l.debitAmountGhs, 0n);
+    const bldCredit = bldLines.reduce((s, l) => s + l.creditAmountGhs, 0n);
+    expect(bldDebit).toBe(bldCredit);
+  });
 });
 
 describe('Phase 4: Legal Tender Words Conversion & Printable Receipts', () => {

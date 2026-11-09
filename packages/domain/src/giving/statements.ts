@@ -8,6 +8,7 @@ import type { Role } from '../permissions/index.js';
 import { canViewIndividualGiving } from '../permissions/index.js';
 import { numberToWordsGhs } from './receipts.js';
 import type { Member, MemberGivingRecord, Pledge, GivingCategory } from './types.js';
+import { convertLineToBaseCurrency } from '../money/index.js';
 
 export interface MemberGivingStatementLine {
   readonly receiptNumber: string;
@@ -16,6 +17,7 @@ export interface MemberGivingStatementLine {
   readonly fundName: string;
   readonly paymentMethod: string;
   readonly amountPesewas: bigint;
+  readonly currency?: 'GHS' | 'USD';
 }
 
 export interface MemberGivingStatement {
@@ -57,6 +59,7 @@ export interface GenerateStatementInput {
   readonly certifyingOfficerRole?: string;
   readonly churchName?: string;
   readonly branchName?: string;
+  readonly exchangeRateUsd?: string;
 }
 
 /**
@@ -74,9 +77,14 @@ export function generateMemberGivingStatement(
     requestingRole,
     certifyingOfficer = 'Elder Kofi Mensah',
     certifyingOfficerRole = 'Church Treasurer',
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = 'Calvary Crystal Church',
+    branchName = 'Main Branch',
+    exchangeRateUsd = '15.5000',
   } = input;
+
+  if (periodStart > periodEnd) {
+    throw new Error(`Invalid period: periodStart (${periodStart}) cannot be after periodEnd (${periodEnd})`);
+  }
 
   const canSeeDetails = canViewIndividualGiving(requestingRole);
 
@@ -90,18 +98,26 @@ export function generateMemberGivingStatement(
   const memberRecords = records.filter((r) => {
     const isThisMember =
       r.memberId === member.id ||
-      (r.envelopeNumber && r.envelopeNumber === member.envelopeNumber);
+      (Boolean(member.envelopeNumber) && r.envelopeNumber === member.envelopeNumber);
     return isThisMember && r.serviceDate >= periodStart && r.serviceDate <= periodEnd;
   });
 
-  const lines: MemberGivingStatementLine[] = memberRecords.map((r) => ({
-    receiptNumber: r.receiptNumber,
-    serviceDate: r.serviceDate,
-    category: r.category,
-    fundName: r.fundName,
-    paymentMethod: r.paymentMethod,
-    amountPesewas: r.amountPesewas,
-  })).sort((a, b) => a.serviceDate.localeCompare(b.serviceDate));
+  const lines: MemberGivingStatementLine[] = memberRecords.map((r) => {
+    // Convert USD records to GHS base pesewas so cents are never added directly to Cedis
+    const amountPesewas = r.currency === 'USD'
+      ? convertLineToBaseCurrency(r.amountPesewas, 'USD', exchangeRateUsd).baseAmountGhs
+      : r.amountPesewas;
+
+    return {
+      receiptNumber: r.receiptNumber,
+      serviceDate: r.serviceDate,
+      category: r.category,
+      fundName: r.fundName,
+      paymentMethod: r.currency === 'USD' ? `${r.paymentMethod} (USD converted @ ${exchangeRateUsd})` : r.paymentMethod,
+      amountPesewas,
+      currency: 'GHS' as const,
+    };
+  }).sort((a, b) => a.serviceDate.localeCompare(b.serviceDate));
 
   let totalContributedPesewas = 0n;
   const categoryMap = new Map<GivingCategory, bigint>();
@@ -147,7 +163,7 @@ export function generateMemberGivingStatement(
   const totalWords = numberToWordsGhs(totalContributedPesewas);
 
   const officialGratitudeText =
-    'We gratefully acknowledge and thank you for your faithful, consistent, and generous financial support toward the ministry and work of the Lord at Accra Central Grace Chapel. May the Lord richly bless and reward your labor of love.';
+    `We gratefully acknowledge and thank you for your faithful, consistent, and generous financial support toward the ministry and work of the Lord at ${churchName}. May the Lord richly bless and reward your labor of love.`;
 
   return {
     statementNumber: `STMT-${member.memberNumber || 'MEM'}-${now.replace(/-/g, '')}`,

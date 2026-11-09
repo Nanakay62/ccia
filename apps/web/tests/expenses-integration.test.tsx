@@ -8,6 +8,8 @@ import { SyncProvider } from '../src/context/SyncContext.js';
 import { GivingProvider } from '../src/context/GivingContext.js';
 import { ExpensesProvider } from '../src/context/ExpensesContext.js';
 import { ExpensesView } from '../src/components/expenses/ExpensesView.js';
+import { RequisitionDetailPage } from '../src/components/expenses/RequisitionDetailPage.js';
+import { ToastProvider } from '../src/context/ToastContext.js';
 
 const TestAppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <AuthProvider>
@@ -15,7 +17,9 @@ const TestAppProviders: React.FC<{ children: React.ReactNode }> = ({ children })
       <SyncProvider>
         <LedgerProvider>
           <GivingProvider>
-            <ExpensesProvider>{children}</ExpensesProvider>
+            <ExpensesProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </ExpensesProvider>
           </GivingProvider>
         </LedgerProvider>
       </SyncProvider>
@@ -25,23 +29,32 @@ const TestAppProviders: React.FC<{ children: React.ReactNode }> = ({ children })
 
 describe('Phase 5: Requisitions & Pastoral Approval Workflow', () => {
   it('renders requisitions, displays status badges, and approves pending requisition', async () => {
-    render(
+    const { unmount } = render(
       <TestAppProviders>
         <ExpensesView />
       </TestAppProviders>
     );
 
     expect(screen.getByText(/Expenditure Requisitions/i)).toBeDefined();
-    expect(screen.getByText('REQ-D01-000014')).toBeDefined();
-    expect(screen.getByText('REQ-D01-000015')).toBeDefined();
+    expect(screen.getByText('REQ-0014')).toBeDefined();
+    expect(screen.getByText('REQ-0015')).toBeDefined();
+    unmount();
 
-    // Default user is Treasurer -> has approval power for PENDING requisition
-    const approveBtn = screen.getByTitle('Approve Requisition');
+    // Default user is Treasurer -> has approval power on RequisitionDetailPage
+    render(
+      <TestAppProviders>
+        <RequisitionDetailPage id="req-002" />
+      </TestAppProviders>
+    );
+
+    const approveBtn = screen.getByRole('button', { name: /^Approve$/i });
     fireEvent.click(approveBtn);
 
+    const confirmBtn = screen.getByRole('button', { name: /Approve Requisition/i });
+    fireEvent.click(confirmBtn);
+
     await waitFor(() => {
-      // REQ-002 now shows APPROVED or Issue Voucher button
-      expect(screen.getAllByText('APPROVED').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/Approved/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -85,7 +98,7 @@ describe('Phase 5: Payment Vouchers & Ghana WHT Deduction', () => {
     const vouchersTab = screen.getByText(/Payment Vouchers & WHT/i);
     fireEvent.click(vouchersTab);
 
-    expect(screen.getByText('PV-FS-D01-000041')).toBeDefined();
+    expect(screen.getByText('PV-0041')).toBeDefined();
     expect(screen.getByText(/5% WHT applied/i)).toBeDefined();
 
     // Open New Voucher modal
@@ -131,8 +144,8 @@ describe('Phase 5: Petty Cash Imprest System', () => {
     const pcTab = screen.getByRole('button', { name: /Petty Cash Imprest/i });
     fireEvent.click(pcTab);
 
-    expect(screen.getByText(/Fixed Imprest Float/i)).toBeDefined();
-    expect(screen.getByText(/1000\.00/)).toBeDefined();
+    expect(screen.getByText(/Fixed imprest float/i)).toBeDefined();
+    expect(screen.getByText(/1,?000\.00/)).toBeDefined();
     expect(screen.getByText(/Disburse Minor Expense/i)).toBeDefined();
 
     // Open disbursement modal
@@ -160,7 +173,7 @@ describe('Phase 5: Petty Cash Imprest System', () => {
     fireEvent.click(replenishBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Petty cash float replenished to GHS 1000\.00/i)).toBeDefined();
+      expect(screen.getByText(/Petty cash float replenished to GHS 1,?000\.00/i)).toBeDefined();
     });
   });
 });
@@ -179,7 +192,7 @@ describe('Phase 5: Fixed Asset Register & Depreciation', () => {
 
     expect(screen.getByText('Yamaha Montage 8 Synthesizer Keyboard')).toBeDefined();
     expect(screen.getByText('Perkins 50kVA Soundproof Standby Diesel Generator')).toBeDefined();
-    expect(screen.getByText('AST-MUS-001')).toBeDefined();
+    expect(screen.getAllByText('AST-0001').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Net Book Value/i)[0]).toBeDefined();
   });
 });

@@ -48,6 +48,8 @@ export interface DemoDataset {
   readonly vendors?: readonly Vendor[];
 }
 
+const MEMBER_TITLES = ['Brother', 'Sister', 'Deacon', 'Deaconess', 'Elder', 'Pastor', 'Rev.', 'Dr.'] as const;
+
 export function generate300Members(branchId: string): Member[] {
   const members: Member[] = [];
   const total = 300;
@@ -61,19 +63,29 @@ export function generate300Members(branchId: string): Member[] {
     const dept = DEPARTMENTS[i % DEPARTMENTS.length]!;
     const familyGroup = `${ln} Family`;
     const phoneHint = String(100 + (i * 3) % 900);
+    const title = MEMBER_TITLES[i % MEMBER_TITLES.length];
+    
+    // Status distribution: mostly ACTIVE, a few INACTIVE, TRANSFERRED, DECEASED
+    let status: 'ACTIVE' | 'INACTIVE' | 'TRANSFERRED' | 'DECEASED' = 'ACTIVE';
+    if (i % 23 === 0) status = 'INACTIVE';
+    else if (i % 37 === 0) status = 'TRANSFERRED';
+    else if (i === 142) status = 'DECEASED';
 
     members.push({
       id: `demo-mem-${String(i).padStart(3, '0')}`,
       branchId,
       memberNumber: memNum,
       envelopeNumber: envNum,
+      title,
+      firstName: fn,
+      lastName: ln,
       fullName,
       phone: `+233 24 ${String(100 + (i * 7) % 900)} ${phoneHint}`,
       phoneHint,
       email: `${fn.toLowerCase()}.${ln.toLowerCase()}@accrachurch.org`,
       familyGroup,
       department: dept,
-      status: 'ACTIVE',
+      status,
       joinDate: '2023-01-15',
       rowVersion: 1,
     });

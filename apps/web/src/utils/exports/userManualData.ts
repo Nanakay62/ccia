@@ -374,7 +374,7 @@ export const USER_MANUAL_CHAPTERS: UserManualChapter[] = [
       <p>The demo environment runs on isolated databases (<code>church_demo_*</code>) separate from live operational data (<code>church_live_*</code>). Changes made in demo mode never affect live church accounts.</p>
 
       <h3>10.3 Realistic Ghanaian Church Dataset</h3>
-      <p>Demo mode comes preloaded with a realistic 300-member Ghanaian church congregation (Accra Central Grace Chapel) complete with:</p>
+      <p>Demo mode comes preloaded with a realistic 300-member Ghanaian church congregation (Calvary Crystal Church) complete with:</p>
       <ul>
         <li>Realistic Ghanaian names (Mensah, Darko, Addo, Boateng, Ofori).</li>
         <li>Active Sunday counting sheets (cash, cheques, MoMo).</li>

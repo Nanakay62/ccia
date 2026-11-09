@@ -26,14 +26,21 @@ export interface Fund {
   readonly isActive: boolean;
 }
 
+export type PeriodStatus = 'OPEN' | 'SOFT_CLOSED' | 'CLOSED';
+
 export interface AccountingPeriod {
   readonly id: string;
   readonly branchId: string;
+  readonly financialYearId?: string | null;
   readonly year: number;
-  readonly month: number;
+  readonly month: number; // 1..12, or 13 for auditor adjustment period
+  readonly isAdjustmentPeriod?: boolean;
+  readonly status?: PeriodStatus;
   readonly startDate: string; // ISO date 'YYYY-MM-DD'
   readonly endDate: string;   // ISO date 'YYYY-MM-DD'
   readonly isClosed: boolean;
+  readonly softClosedAt?: string | null;
+  readonly softClosedBy?: string | null;
   readonly closedAt?: string | null;
   readonly closedBy?: string | null;
 }
@@ -54,7 +61,10 @@ export type JournalEntryType =
   | 'VOUCHER'
   | 'REVALUATION'
   | 'REVERSAL'
-  | 'OPENING_BALANCE';
+  | 'OPENING_BALANCE'
+  | 'YEAR_END_CLOSING'
+  | 'ACCRUAL_PREPAYMENT'
+  | 'IMPORTED';
 
 export interface JournalLine {
   readonly id: string;
@@ -74,9 +84,13 @@ export interface JournalLine {
 export interface JournalEntry {
   readonly id: string;
   readonly branchId: string;
+  readonly financialYearId?: string | null;
   readonly documentNumber: string;
   readonly entryDate: string; // 'YYYY-MM-DD'
   readonly periodId?: string | null;
+  readonly isAdjustmentPeriodEntry?: boolean;
+  readonly importBatchId?: string | null;
+  readonly autoReverseOnDate?: string | null;
   readonly entryType: JournalEntryType;
   readonly narration: string;
   readonly lineCount: number;

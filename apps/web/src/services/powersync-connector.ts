@@ -165,6 +165,14 @@ export class PowerSyncUploadConnector {
         return 'update_member_with_conflict_check';
       case 'CLOSE_PERIOD':
         return 'close_period_with_doctor_check';
+      case 'APPROVE_REQUISITION':
+        return 'approve_requisition';
+      case 'UPDATE_VENDOR':
+        return 'update_vendor';
+      case 'UPDATE_BUDGET':
+        return 'update_budget';
+      case 'PROCESS_PAYROLL':
+        return 'process_payroll';
       default:
         return null;
     }

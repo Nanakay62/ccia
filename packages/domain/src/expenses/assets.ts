@@ -27,22 +27,34 @@ export function calculateAssetDepreciation(
     };
   }
 
-  // Straight-line annual & monthly rates
-  const annualDepreciationPesewas = depreciableAmount / BigInt(usefulLifeYears);
-  const monthlyDepreciationPesewas = annualDepreciationPesewas / 12n;
+  // Straight-line depreciation using exact non-compounding integer arithmetic
+  const totalUsefulMonths = BigInt(usefulLifeYears * 12);
+  const monthlyDepreciationPesewas = depreciableAmount / totalUsefulMonths;
+  const annualDepreciationPesewas = monthlyDepreciationPesewas * 12n;
 
-  // Calculate age in months
+  // Calculate age in months with day-of-month precision
   let ageMonths =
     (asOfDate.getFullYear() - purchaseDate.getFullYear()) * 12 +
     (asOfDate.getMonth() - purchaseDate.getMonth());
 
+  if (asOfDate.getDate() < purchaseDate.getDate()) {
+    ageMonths -= 1;
+  }
+
   if (ageMonths < 0) ageMonths = 0;
 
-  // Total accumulated depreciation cannot exceed depreciable amount
+  // Total accumulated depreciation: multiply before dividing to preserve precision
   const maxDepreciation = depreciableAmount;
-  let accumulated = monthlyDepreciationPesewas * BigInt(ageMonths);
-  if (accumulated > maxDepreciation) {
+  let accumulated: bigint;
+
+  if (BigInt(ageMonths) >= totalUsefulMonths) {
+    // Fully depreciated: reaches exact residual value
     accumulated = maxDepreciation;
+  } else {
+    accumulated = (depreciableAmount * BigInt(ageMonths)) / totalUsefulMonths;
+    if (accumulated > maxDepreciation) {
+      accumulated = maxDepreciation;
+    }
   }
 
   const netBookValuePesewas = asset.purchaseCostPesewas - accumulated;

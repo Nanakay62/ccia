@@ -25,9 +25,13 @@ export interface CreateLineInput {
 export interface CreateJournalEntryInput {
   readonly id: string;
   readonly branchId: string;
+  readonly financialYearId?: string | null;
   readonly documentNumber: string;
   readonly entryDate: string; // 'YYYY-MM-DD'
   readonly entryType?: JournalEntry['entryType'];
+  readonly isAdjustmentPeriodEntry?: boolean;
+  readonly importBatchId?: string | null;
+  readonly autoReverseOnDate?: string | null;
   readonly narration: string;
   readonly createdBy: string;
   readonly deviceId: string;
@@ -55,13 +59,19 @@ export function validateJournalEntry(
   entry: JournalEntry,
   accountsMap?: ReadonlyMap<string, Account>,
   fundsMap?: ReadonlyMap<string, Fund>,
-  period?: AccountingPeriod | null
+  period?: AccountingPeriod | null,
+  userRole?: string
 ): ValidationResult {
   const errors: string[] = [];
 
-  // 1. Period Closed Check
-  if (period && period.isClosed) {
-    errors.push(`Cannot post entry ${entry.documentNumber} into closed period ${period.year}-${String(period.month).padStart(2, '0')}.`);
+  // 1. Period Closed & Soft-Closed Check (Section A1)
+  if (period) {
+    const isHardClosed = period.isClosed || period.status === 'CLOSED';
+    if (isHardClosed) {
+      errors.push(`Cannot post entry ${entry.documentNumber} into closed period ${period.year}-${String(period.month).padStart(2, '0')}.`);
+    } else if (period.status === 'SOFT_CLOSED' && userRole && userRole !== 'Treasurer') {
+      errors.push(`Cannot post entry ${entry.documentNumber}: Period ${period.year}-${String(period.month).padStart(2, '0')} is soft-closed; only the Treasurer can post.`);
+    }
   }
 
   // 2. Minimum Line Count
@@ -232,9 +242,13 @@ export function createJournalEntry(input: CreateJournalEntryInput): JournalEntry
   return {
     id: input.id,
     branchId: input.branchId,
+    financialYearId: input.financialYearId ?? input.period?.financialYearId ?? null,
     documentNumber: input.documentNumber,
     entryDate: input.entryDate,
     periodId: input.period?.id ?? null,
+    isAdjustmentPeriodEntry: input.isAdjustmentPeriodEntry ?? Boolean(input.period?.isAdjustmentPeriod),
+    importBatchId: input.importBatchId ?? null,
+    autoReverseOnDate: input.autoReverseOnDate ?? null,
     entryType: input.entryType ?? 'STANDARD',
     narration: input.narration,
     lineCount: lines.length,
@@ -527,13 +541,15 @@ export function computeJournalEntrySignature(entry: JournalEntry): string {
     .join('|');
   const payload = `${entry.id}:${entry.branchId}:${entry.documentNumber}:${entry.entryDate}:${entry.lineCount}:${entry.totalDebitGhs}:${entry.totalCreditGhs}:${lineStrings}`;
 
-  // Deterministic 64-bit FNV-1a hash
+  // Deterministic 64-bit dual-state FNV-1a hash with position diffusion and avalanche mixing
   let h1 = 0x811c9dc5;
   let h2 = 0xcbf29ce4;
   for (let i = 0; i < payload.length; i++) {
     const code = payload.charCodeAt(i);
-    h1 = Math.imul(h1 ^ code, 0x01000193);
-    h2 = Math.imul(h2 ^ (code >>> 8), 0x01000193);
+    h1 = Math.imul(h1 ^ (code & 0xff), 0x01000193);
+    h2 = Math.imul(h2 ^ (((code * 33) ^ (i + 1)) & 0xff), 0x01000193);
+    h1 = (h1 ^ (h2 >>> 15)) | 0;
+    h2 = (h2 ^ (h1 >>> 15)) | 0;
   }
   return `sig-v1-${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}`;
 }

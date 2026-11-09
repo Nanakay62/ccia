@@ -105,7 +105,7 @@ describe('Phase 6: Accessibility, Polish & Platform User Manual Verification', (
 
     it('generates complete official HTML document with church letterhead and chapters', () => {
       const html = generateUserManualHtml(false);
-      expect(html).toContain('ACCRA CENTRAL GRACE CHAPEL');
+      expect(html).toContain('CALVARY CRYSTAL CHURCH');
       expect(html).toContain('Double-Entry Accounting Invariant');
       expect(html).toContain('Ghana Withholding Tax (WHT)');
       expect(html).toContain('Ghana SSNIT Tier 1 Pension Compliance');
@@ -122,15 +122,14 @@ describe('Phase 6: Accessibility, Polish & Platform User Manual Verification', (
         </TestWrapper>
       );
 
-      // Verify modal header and version tag
+      // Verify modal header and plain text version (Spec 5.2)
       expect(
         screen.getByText(/CCIA Church Accounting Platform — User Manual/i)
       ).toBeDefined();
-      expect(screen.getByText('v2.0 GHS/USD')).toBeDefined();
+      expect(screen.getByText('v2.0')).toBeDefined();
 
-      // Verify export buttons
-      expect(screen.getByText(/Word Guide \(\.doc\)/i)).toBeDefined();
-      expect(screen.getByText(/Print \/ PDF Guide/i)).toBeDefined();
+      // Verify export buttons (one Open, one Download PDF per Spec 5.2)
+      expect(screen.getByText(/Open/i)).toBeDefined();
       expect(screen.getByText(/Download PDF/i)).toBeDefined();
 
       // Verify chapter 1 is rendered by default

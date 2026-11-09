@@ -21,9 +21,9 @@ export function loadFromStore<T>(prefix: string, isDemo: boolean, fallback: T): 
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
 
-    // Custom JSON reviver for BigInt support (pesewas amounts)
+    // Custom JSON reviver for BigInt support (pesewas amounts, supports negative values)
     return JSON.parse(raw, (_k, v) => {
-      if (typeof v === 'string' && /^\d+n$/.test(v)) {
+      if (typeof v === 'string' && /^-?\d+n$/.test(v)) {
         return BigInt(v.slice(0, -1));
       }
       return v;
@@ -41,6 +41,16 @@ export function saveToStore<T>(prefix: string, isDemo: boolean, data: T): void {
 
   try {
     const key = getStorageKey(prefix, isDemo);
+    
+    // Prevent external libraries (e.g. Supabase or HTTP clients) that attach BigInt.prototype.toJSON
+    // from pre-converting BigInt to plain numbers or un-suffixed strings before our reviver can tag them.
+    const hadBigIntToJSON = Object.prototype.hasOwnProperty.call(BigInt.prototype, 'toJSON') ||
+      Boolean((BigInt.prototype as any).toJSON);
+    const originalBigIntToJSON = (BigInt.prototype as any).toJSON;
+    if (hadBigIntToJSON) {
+      delete (BigInt.prototype as any).toJSON;
+    }
+
     // Custom JSON replacer for BigInt support
     const serialized = JSON.stringify(data, (_k, v) => {
       if (typeof v === 'bigint') {
@@ -48,6 +58,11 @@ export function saveToStore<T>(prefix: string, isDemo: boolean, data: T): void {
       }
       return v;
     });
+
+    if (hadBigIntToJSON && originalBigIntToJSON) {
+      (BigInt.prototype as any).toJSON = originalBigIntToJSON;
+    }
+
     localStorage.setItem(key, serialized);
   } catch (err) {
     console.warn(`Failed to write ${prefix} to storage:`, err);

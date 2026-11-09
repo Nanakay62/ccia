@@ -435,6 +435,8 @@ export const ExpensesProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       momoNetwork?: string;
       momoReference?: string;
       momoRecipientPhone?: string;
+      authorizedById?: string;
+      authorizedByName?: string;
     }) => {
       // 1. Calculate WHT and Net
       const { whtPesewas, netPesewas } = calculateWithholdingTax(
@@ -472,8 +474,8 @@ export const ExpensesProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         momoRecipientPhone: params.momoRecipientPhone,
         preparedById: currentUser.id,
         preparedByName: currentUser.fullName,
-        authorizedById: currentUser.id,
-        authorizedByName: currentUser.fullName,
+        authorizedById: params.authorizedById || 'user-0001-treasurer',
+        authorizedByName: params.authorizedByName || 'Elder Kofi Mensah (Treasurer)',
         createdAt: new Date().toISOString(),
       };
 
@@ -513,12 +515,17 @@ export const ExpensesProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (isDemoMode) {
         markDemoChanged();
       } else {
-        // 4. Enqueue offline sync
+        // 4. Enqueue offline sync with valid JournalEntry payload containing lines
         enqueueItem({
-          entityId: voucher.id,
+          entityId: entry.id,
           entityType: 'PAYMENT_VOUCHER',
           action: 'POST_JOURNAL_ENTRY',
-          payload: { ...voucher, journal_entry_id: entry.id },
+          payload: {
+            ...entry,
+            voucher_id: voucher.id,
+            voucher_number: voucher.voucherNumber,
+            payee_name: voucher.payeeName,
+          },
           deviceId: currentUser.deviceId,
         });
       }

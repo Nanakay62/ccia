@@ -9,6 +9,7 @@ export interface StaffMember {
   readonly id: string;
   readonly branchId: string;
   readonly staffNumber: string; // e.g. "STF-001"
+  readonly title?: string;
   readonly fullName: string;
   readonly roleTitle: string; // e.g. "Senior Pastor", "Church Administrator"
   readonly department: string; // e.g. "Pastoral", "Administration", "Music", "Facilities"
@@ -22,7 +23,9 @@ export interface StaffMember {
   readonly momoNetwork?: 'MTN' | 'VODAFONE' | 'AIRTELTIGO';
   readonly momoNumber?: string;
   readonly ghanaCardNumber?: string;
+  readonly tinNumber?: string;
   readonly ssnitNumber?: string;
+  readonly startDate?: string;
   readonly isActive: boolean;
 }
 
@@ -37,13 +40,18 @@ export interface PayrollItem {
   readonly pastoralResponsibilityPesewas: bigint;
   readonly totalAllowancesPesewas: bigint;
   readonly grossSalaryPesewas: bigint;
+  readonly taxableIncomePesewas?: bigint;
   readonly ssnitTier1EmployeePesewas: bigint; // 5.5% employee contribution
   readonly ssnitTier1EmployerPesewas: bigint; // 13% employer contribution
   readonly payeTaxPesewas: bigint;            // Withheld PAYE tax
   readonly totalDeductionsPesewas: bigint;
   readonly netSalaryPesewas: bigint;
   readonly paymentMethod: 'BANK' | 'MOMO' | 'CASH';
+  readonly taxOverridden?: boolean;
+  readonly taxOverrideReason?: string;
 }
+
+export type PayrollStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'PAID' | 'POSTED';
 
 export interface PayrollRun {
   readonly id: string;
@@ -64,9 +72,26 @@ export interface PayrollRun {
   readonly totalPayePesewas: bigint;
   readonly totalNetPayPesewas: bigint;
   readonly totalPayrollCostPesewas: bigint; // Gross + Employer SSNIT
-  readonly status: 'DRAFT' | 'APPROVED' | 'POSTED';
+  readonly status: PayrollStatus;
+  readonly preparedById?: string;
+  readonly preparedByName?: string;
+  readonly preparedAt?: string;
+  readonly submittedAt?: string;
   readonly authorizedBy?: string;
   readonly authorizedAt?: string;
+  readonly approvedById?: string;
+  readonly approvedByName?: string;
+  readonly approvedAt?: string;
+  readonly approvalComment?: string;
+  readonly paidAt?: string;
+  readonly paidReference?: string;
+  readonly rateTableVersion?: string;
+  readonly statutorySsnitPaid?: boolean;
+  readonly statutorySsnitPaidRef?: string;
+  readonly statutorySsnitPaidDate?: string;
+  readonly statutoryPayePaid?: boolean;
+  readonly statutoryPayePaidRef?: string;
+  readonly statutoryPayePaidDate?: string;
   readonly journalEntryId?: string;
 }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { PrintableReceipt } from '@church/domain';
-import { Printer, X, CheckCircle2 } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import { ChurchLetterhead } from '../common/ChurchLetterhead.js';
 import { DualSignatureBlock } from '../common/DualSignatureBlock.js';
 import { useModalEscape } from '../../utils/useModalEscape.js';
@@ -35,9 +35,8 @@ export const PrintableReceiptModal: React.FC<PrintableReceiptModalProps> = ({
       <div className="bg-white text-slate-900 rounded-[var(--radius)] max-w-2xl w-full p-6 shadow-2xl relative my-8 print:m-0 print:p-0 print:shadow-none print:w-full border border-[var(--surface-border)]">
         {/* Screen-only Close and Print Toolbar */}
         <div className="flex items-center justify-between pb-4 border-b border-[var(--surface-border)] print:hidden">
-          <div className="flex items-center gap-2 text-emerald-700 font-semibold text-sm">
-            <CheckCircle2 className="w-5 h-5" />
-            <span>Receipt Issued Successfully</span>
+          <div className="text-sm font-semibold text-slate-900">
+            Official Giving Receipt
           </div>
           <div className="flex items-center gap-2">
             <button

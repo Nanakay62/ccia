@@ -47,15 +47,18 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
         </AllProviders>
       );
 
-      // Verify header and default run
-      expect(screen.getByText(/Church Staff Payroll & Allowances Management/i)).toBeDefined();
-      expect(screen.getByText(/Monthly Payroll Runs/i)).toBeDefined();
-      expect(screen.getByText(/Payroll Itemization/i)).toBeDefined();
+      // Verify header and default run per Spec 3.3
+      expect(screen.getByRole('heading', { level: 2, name: /^Payroll$/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Payroll runs/i })).toBeDefined();
+      expect(screen.getByText(/Approved 28 Oct 2026/i)).toBeDefined();
+      expect(screen.getByText(/Overdue/i)).toBeDefined();
 
-      // Check statutory Ghana SSNIT & PAYE badges and metrics
-      expect(screen.getByText(/SSNIT \(Emp 5.5%\)/i)).toBeDefined();
-      expect(screen.getAllByText(/PAYE Tax/i).length).toBeGreaterThan(0);
-      expect(screen.getByText(/Net Disbursed/i)).toBeDefined();
+      // Check statutory Ghana SSNIT & PAYE neutral metrics
+      expect(screen.getByText(/Employee SSNIT \(5.5%\)/i)).toBeDefined();
+      expect(screen.getAllByText(/PAYE/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Net pay/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Employer SSNIT \(13%\)/i)).toBeDefined();
+      expect(screen.getByText(/Total cost to church/i)).toBeDefined();
     });
 
     it('switches to Staff Registry and registers a new church worker', () => {
@@ -65,26 +68,26 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
         </AllProviders>
       );
 
-      // Switch to Staff Registry tab
-      const staffTab = screen.getByRole('button', { name: /Staff Registry/i });
+      // Switch to Staff tab (Spec 3.3)
+      const staffTab = screen.getByRole('button', { name: /^Staff/i });
       fireEvent.click(staffTab);
 
       // Check existing seeded staff
-      expect(screen.getByText(/Rev. Emmanuel Appiah/i)).toBeDefined();
+      expect(screen.getAllByText(/Rev. Emmanuel Addo/i).length).toBeGreaterThan(0);
       expect(screen.getByText(/Pastor Samuel Osei/i)).toBeDefined();
-      expect(screen.getByText(/Kwame Agyeman/i)).toBeDefined();
+      expect(screen.getAllByText(/Kwame Agyeman/i).length).toBeGreaterThan(0);
 
-      // Click Add Staff
-      const addStaffBtn = screen.getByRole('button', { name: /Add Staff/i });
+      // Click Add staff member
+      const addStaffBtn = screen.getByRole('button', { name: /Add staff member/i });
       fireEvent.click(addStaffBtn);
 
       // Fill in new staff form
-      const nameInput = screen.getByPlaceholderText(/e.g. Pastor David Quaye/i);
-      const roleInput = screen.getByPlaceholderText(/e.g. Associate Pastor/i);
+      const nameInput = screen.getByPlaceholderText(/e.g. Emmanuel Mensah/i);
+      const roleInput = screen.getByPlaceholderText(/e.g. Media & Sound Lead/i);
       const basicInput = screen.getAllByPlaceholderText(/0.00/i)[0]!;
 
-      fireEvent.change(nameInput, { target: { value: 'Pastor David Osei' } });
-      fireEvent.change(roleInput, { target: { value: 'Youth Pastor' } });
+      fireEvent.change(nameInput, { target: { value: 'David Osei' } });
+      fireEvent.change(roleInput, { target: { value: 'Youth Coordinator' } });
       fireEvent.change(basicInput, { target: { value: '2800.00' } });
 
       // Submit
@@ -92,8 +95,8 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
       fireEvent.click(submitBtn);
 
       // Should now appear in registry
-      expect(screen.getByText(/Pastor David Osei/i)).toBeDefined();
-      expect(screen.getAllByText(/Youth Pastor/i).length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText(/David Osei/i)).toBeDefined();
+      expect(screen.getByText(/Youth Coordinator/i)).toBeDefined();
     });
 
     it('executes a monthly payroll run with automated balanced journal entry', () => {
@@ -103,18 +106,18 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
         </AllProviders>
       );
 
-      // Open Run Monthly Payroll modal
-      const runPayrollBtn = screen.getByRole('button', { name: /Run Monthly Payroll/i });
-      fireEvent.click(runPayrollBtn);
+      // Open Prepare run modal (Spec 3.3)
+      const prepareRunBtn = screen.getByRole('button', { name: /Prepare run/i });
+      fireEvent.click(prepareRunBtn);
 
-      expect(screen.getByText(/Execute Monthly Church Staff Payroll/i)).toBeDefined();
+      expect(screen.getByText(/Prepare Monthly Payroll Run/i)).toBeDefined();
 
       // Submit payroll run
-      const confirmRunBtn = screen.getByRole('button', { name: /Authorize & Disburse Payroll/i });
+      const confirmRunBtn = screen.getByRole('button', { name: /Generate Draft Run/i });
       fireEvent.click(confirmRunBtn);
 
-      // Verify success message with ledger posting
-      expect(screen.getByText(/Balanced ledger entry posted/i)).toBeDefined();
+      // Verify draft run status
+      expect(screen.getByText(/Draft prepared by/i)).toBeDefined();
     });
 
     it('views and renders printable individual payslip with Ghanaian legal tender', () => {
@@ -125,16 +128,22 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
       );
 
       // Switch to Payslips tab
-      const payslipsTab = screen.getByRole('button', { name: /Staff Payslips/i });
+      const payslipsTab = screen.getByRole('button', { name: /^Payslips/i });
       fireEvent.click(payslipsTab);
 
-      // Verify payslip cards
-      expect(screen.getAllByText(/Rev. Emmanuel Appiah/i).length).toBeGreaterThan(0);
+      // Verify payslip table rows
+      expect(screen.getAllByText(/Rev. Emmanuel Addo/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Senior Pastor/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/Gross Salary:/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/Total Deductions:/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/Net Pay:/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/Print Payslip/i).length).toBeGreaterThan(0);
+
+      // Open preview modal
+      const previewBtn = screen.getAllByRole('button', { name: /Preview & Print/i })[0]!;
+      fireEvent.click(previewBtn);
+
+      expect(screen.getAllByText(/STAFF PAYSLIP/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Gross Earnings/i)).toBeDefined();
+      expect(screen.getByText(/Statutory Deductions/i)).toBeDefined();
+      expect(screen.getByText(/Net Salary Disbursed:/i)).toBeDefined();
+      expect(screen.getAllByRole('button', { name: /Print Payslip/i }).length).toBeGreaterThan(0);
     });
   });
 
@@ -203,16 +212,17 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
         </AllProviders>
       );
 
-      // Find Statement buttons for members
-      const statementButtons = screen.getAllByRole('button', { name: /Statement/i });
-      expect(statementButtons.length).toBeGreaterThan(0);
+      // Clicking member row opens detail panel (Spec 2.2)
+      const memberRow = screen.getByText(/Kofi Mensah/i);
+      fireEvent.click(memberRow);
 
-      // Click statement for the first member (Kofi Mensah)
-      fireEvent.click(statementButtons[0]!);
+      // Detail panel contains "Print statement" action
+      const printStatementBtn = screen.getByRole('button', { name: /Print statement/i });
+      fireEvent.click(printStatementBtn);
 
       // Statement modal should be visible
       expect(screen.getByText(/Official Church Financial Contribution Statement/i)).toBeDefined();
-      expect(screen.getByText(/Accra Community Church/i)).toBeDefined();
+      expect(screen.getAllByText(/Calvary Crystal Church/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Kofi Mensah/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/ENV-012/i).length).toBeGreaterThan(0);
 
@@ -221,14 +231,15 @@ describe('Phase 7: Payroll, Budgets, and Member Statements Integration', () => {
 
       // Check pledge campaign section
       expect(screen.getByText(/Building & Special Pledges/i)).toBeDefined();
-      expect(screen.getByText(/Auditorium Expansion Project 2026/i)).toBeDefined();
+      expect(screen.getAllByText(/Auditorium Expansion Project 2026/i).length).toBeGreaterThan(0);
 
       // Check pastoral gratitude note and certification block
       expect(screen.getByText(/We gratefully acknowledge and thank you/i)).toBeDefined();
       expect(screen.getByText(/Authorized Signature & Church Stamp/i)).toBeDefined();
 
       // Close modal
-      const closeBtn = screen.getByRole('button', { name: /Print Statement/i }).nextElementSibling;
+      const printBtns = screen.getAllByRole('button', { name: /Print Statement/i });
+      const closeBtn = printBtns[printBtns.length - 1]?.nextElementSibling;
       if (closeBtn) {
         fireEvent.click(closeBtn);
       }

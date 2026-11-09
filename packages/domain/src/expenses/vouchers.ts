@@ -2,6 +2,7 @@ import Big from 'big.js';
 import type { PaymentVoucher, WithholdingTaxRate, VoucherPaymentMethod } from './types.js';
 import type { JournalEntry, JournalLine } from '../ledger/types.js';
 import { validateJournalEntry } from '../ledger/rules.js';
+import { convertLineToBaseCurrency } from '../money/index.js';
 
 /**
  * Calculates Ghana Withholding Tax (WHT) and net payable amount in minor units.
@@ -66,15 +67,17 @@ export function generateJournalEntryFromVoucher(params: VoucherJournalParams): J
   const { voucher, branchId, createdBy, deviceId } = params;
   const isUsd = voucher.currency === 'USD';
   const rateUsd = params.exchangeRateUsd || '15.5000';
-  const exchangeRate = isUsd ? rateUsd : '1.0000';
 
   const lines: JournalLine[] = [];
   let lineNumber = 1;
 
   // 1. Debit: Designated Expense Account (Gross Amount)
-  const grossAmountGhs = isUsd
-    ? BigInt(Math.round(Number(voucher.grossAmountPesewas) * parseFloat(rateUsd)))
-    : voucher.grossAmountPesewas;
+  const grossConversion = convertLineToBaseCurrency(
+    voucher.grossAmountPesewas,
+    voucher.currency,
+    rateUsd
+  );
+  const grossAmountGhs = grossConversion.baseAmountGhs;
 
   lines.push({
     id: `line-${voucher.id}-exp`,
@@ -85,16 +88,32 @@ export function generateJournalEntryFromVoucher(params: VoucherJournalParams): J
     description: `${voucher.purpose} - Payee: ${voucher.payeeName}`,
     originalCurrency: voucher.currency,
     originalAmount: voucher.grossAmountPesewas,
-    exchangeRate,
+    exchangeRate: grossConversion.exchangeRate,
     debitAmountGhs: grossAmountGhs,
     creditAmountGhs: 0n,
-    roundingDifferencePesewas: 0n,
+    roundingDifferencePesewas: grossConversion.roundingDifference,
   });
 
+  // Calculate WHT base amount if applicable
+  let whtGhs = 0n;
+  let whtConvRate = '1.0000';
+  let whtRoundingDiff = 0n;
+  if (voucher.withholdingTaxPesewas > 0n) {
+    const whtConversion = convertLineToBaseCurrency(
+      voucher.withholdingTaxPesewas,
+      voucher.currency,
+      rateUsd
+    );
+    whtGhs = whtConversion.baseAmountGhs;
+    whtConvRate = whtConversion.exchangeRate;
+    whtRoundingDiff = whtConversion.roundingDifference;
+  }
+
   // 2. Credit: Payment Asset Account (Net Payable Amount)
+  // Ensures debits === credits strictly by setting netAmountGhs = grossAmountGhs - whtGhs
   const assetAccount = resolveAssetAccountForPaymentMethod(voucher.paymentMethod);
   const netAmountGhs = isUsd
-    ? BigInt(Math.round(Number(voucher.netPayablePesewas) * parseFloat(rateUsd)))
+    ? grossAmountGhs - whtGhs
     : voucher.netPayablePesewas;
 
   const paymentDesc =
@@ -113,7 +132,7 @@ export function generateJournalEntryFromVoucher(params: VoucherJournalParams): J
     description: paymentDesc,
     originalCurrency: voucher.currency,
     originalAmount: voucher.netPayablePesewas,
-    exchangeRate,
+    exchangeRate: grossConversion.exchangeRate,
     debitAmountGhs: 0n,
     creditAmountGhs: netAmountGhs,
     roundingDifferencePesewas: 0n,
@@ -121,10 +140,6 @@ export function generateJournalEntryFromVoucher(params: VoucherJournalParams): J
 
   // 3. Credit: Withholding Tax Payable (if WHT applied)
   if (voucher.withholdingTaxPesewas > 0n) {
-    const whtGhs = isUsd
-      ? BigInt(Math.round(Number(voucher.withholdingTaxPesewas) * parseFloat(rateUsd)))
-      : voucher.withholdingTaxPesewas;
-
     lines.push({
       id: `line-${voucher.id}-wht`,
       journalEntryId: voucher.id,
@@ -134,10 +149,10 @@ export function generateJournalEntryFromVoucher(params: VoucherJournalParams): J
       description: `WHT ${voucher.withholdingTaxRate}% deducted on ${voucher.payeeName}`,
       originalCurrency: voucher.currency,
       originalAmount: voucher.withholdingTaxPesewas,
-      exchangeRate,
+      exchangeRate: whtConvRate,
       debitAmountGhs: 0n,
       creditAmountGhs: whtGhs,
-      roundingDifferencePesewas: 0n,
+      roundingDifferencePesewas: whtRoundingDiff,
     });
   }
 

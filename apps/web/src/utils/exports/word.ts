@@ -8,6 +8,19 @@
 
 import { defaultChurchSettings } from '../../config/churchSettings.js';
 
+/**
+ * Escapes unsafe characters for HTML/XML documents to prevent XSS / markup injection.
+ */
+function escapeHtml(str: unknown): string {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export interface WordExportColumn {
   header: string;
   key: string;
@@ -55,7 +68,7 @@ export const exportReportToWord = ({
       (col) =>
         `<th style="border: 1px solid #475569; background-color: #f1f5f9; padding: 8px 10px; font-size: 11pt; text-align: ${
           col.align || (col.isCurrency ? 'right' : 'left')
-        }; color: #0f172a; font-family: Calibri, 'Segoe UI', sans-serif;">${col.header}</th>`
+        }; color: #0f172a; font-family: Calibri, 'Segoe UI', sans-serif;">${escapeHtml(col.header)}</th>`
     )
     .join('');
 
@@ -81,7 +94,7 @@ export const exportReportToWord = ({
           }
           return `<td style="border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: ${borderBottom}; padding: 6px 10px; font-size: 10.5pt; text-align: ${
             col.align || (col.isCurrency ? 'right' : 'left')
-          }; font-family: Calibri, 'Segoe UI', sans-serif; font-weight: ${fontWeight};">${val}</td>`;
+          }; font-family: Calibri, 'Segoe UI', sans-serif; font-weight: ${fontWeight};">${escapeHtml(val)}</td>`;
         })
         .join('');
 
@@ -93,7 +106,7 @@ export const exportReportToWord = ({
     <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
     <head>
       <meta charset='utf-8'>
-      <title>${title}</title>
+      <title>${escapeHtml(title)}</title>
       <style>
         @page {
           size: A4 portrait;
@@ -126,30 +139,30 @@ export const exportReportToWord = ({
         <tr>
           <td style="vertical-align: top;">
             <div style="font-size: 16pt; font-weight: bold; font-family: Georgia, serif; color: #1e3a8a;">
-              ${defaultChurchSettings.churchName}
+              ${escapeHtml(defaultChurchSettings.churchName)}
             </div>
             <div style="font-size: 11pt; font-weight: bold; color: #334155; margin-top: 2px;">
-              ${defaultChurchSettings.branchName}
+              ${escapeHtml(defaultChurchSettings.branchName)}
             </div>
             <div style="font-size: 9.5pt; color: #64748b; margin-top: 2px;">
-              ${defaultChurchSettings.address}
+              ${escapeHtml(defaultChurchSettings.address)}
             </div>
             <div style="font-size: 9pt; color: #64748b;">
-              Tel: ${defaultChurchSettings.phone} • Email: ${defaultChurchSettings.email}
+              Tel: ${escapeHtml(defaultChurchSettings.phone)} • Email: ${escapeHtml(defaultChurchSettings.email)}
             </div>
             <div style="font-size: 9pt; font-weight: bold; color: #475569; margin-top: 2px;">
-              ${defaultChurchSettings.taxRegNumber}
+              ${escapeHtml(defaultChurchSettings.taxRegNumber)}
             </div>
           </td>
           <td style="vertical-align: top; text-align: right;">
             <div style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 4px 12px; font-size: 10pt; font-weight: bold; text-transform: uppercase;">
-              ${title}
+              ${escapeHtml(title)}
             </div>
             <div style="font-size: 10pt; margin-top: 6px; color: #334155;">
-              Period: <strong>${periodText}</strong>
+              Period: <strong>${escapeHtml(periodText)}</strong>
             </div>
             <div style="font-size: 9.5pt; color: #64748b;">
-              Date Generated: <strong>${currentDate}</strong>
+              Date Generated: <strong>${escapeHtml(currentDate)}</strong>
             </div>
             <div style="font-size: 9.5pt; color: #64748b;">
               Currency: <strong>${currency === 'USD' ? 'US Dollars (USD)' : 'Ghana Cedis (GHS)'}</strong>
@@ -161,7 +174,7 @@ export const exportReportToWord = ({
       <!-- Document Notes / Overview if any -->
       ${
         notes
-          ? `<p style="font-size: 10pt; color: #475569; font-style: italic; margin-bottom: 14px;">${notes}</p>`
+          ? `<p style="font-size: 10pt; color: #475569; font-style: italic; margin-bottom: 14px;">${escapeHtml(notes)}</p>`
           : ''
       }
 
@@ -189,9 +202,9 @@ export const exportReportToWord = ({
                 Signed Electronically
               </span>
             </div>
-            <div style="font-size: 10.5pt; font-weight: bold; color: #0f172a;">${preparedByName}</div>
-            <div style="font-size: 9.5pt; color: #475569;">${preparedByRole}</div>
-            <div style="font-size: 9pt; color: #64748b;">Date: ${currentDate}</div>
+            <div style="font-size: 10.5pt; font-weight: bold; color: #0f172a;">${escapeHtml(preparedByName)}</div>
+            <div style="font-size: 9.5pt; color: #475569;">${escapeHtml(preparedByRole)}</div>
+            <div style="font-size: 9pt; color: #64748b;">Date: ${escapeHtml(currentDate)}</div>
           </td>
           <td style="width: 10%;"></td>
           <td style="width: 45%; vertical-align: top;">
@@ -203,9 +216,9 @@ export const exportReportToWord = ({
                 Signed Electronically
               </span>
             </div>
-            <div style="font-size: 10.5pt; font-weight: bold; color: #0f172a;">${approvedByName}</div>
-            <div style="font-size: 9.5pt; color: #475569;">${approvedByRole}</div>
-            <div style="font-size: 9pt; color: #64748b;">Date: ${currentDate}</div>
+            <div style="font-size: 10.5pt; font-weight: bold; color: #0f172a;">${escapeHtml(approvedByName)}</div>
+            <div style="font-size: 9.5pt; color: #475569;">${escapeHtml(approvedByRole)}</div>
+            <div style="font-size: 9pt; color: #64748b;">Date: ${escapeHtml(currentDate)}</div>
           </td>
         </tr>
       </table>

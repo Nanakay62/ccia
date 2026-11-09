@@ -5,6 +5,7 @@
  */
 
 import ExcelJS from 'exceljs';
+import { defaultChurchSettings } from '../../config/churchSettings.js';
 
 export interface ExcelColumnDef {
   header: string;
@@ -27,13 +28,41 @@ export interface ExcelExportOptions {
   disclosureFootnote?: string;
 }
 
-export async function exportReportToExcel(options: ExcelExportOptions): Promise<void> {
+export async function exportReportToExcel(
+  optionsOrData: ExcelExportOptions | Record<string, any>[],
+  filenameParam?: string,
+  extraOptions?: { title?: string; currency?: 'GHS' | 'USD'; periodText?: string }
+): Promise<void> {
+  let options: ExcelExportOptions;
+
+  if (Array.isArray(optionsOrData)) {
+    const data = optionsOrData;
+    const first = data[0];
+    const headers = first ? Object.keys(first) : [];
+    const columns: ExcelColumnDef[] = headers.map((h) => ({
+      header: h,
+      key: h,
+      isCurrency: h.toLowerCase().includes('ghs') || h.toLowerCase().includes('usd') || h.toLowerCase().includes('amount'),
+    }));
+
+    options = {
+      filename: filenameParam || 'export',
+      reportTitle: extraOptions?.title || 'Report',
+      periodText: extraOptions?.periodText || 'Current Period',
+      currency: extraOptions?.currency || 'GHS',
+      columns,
+      data,
+    };
+  } else {
+    options = optionsOrData;
+  }
+
   const {
     filename,
     sheetName = 'Financial Statement',
     reportTitle,
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = defaultChurchSettings.churchName,
+    branchName = defaultChurchSettings.branchName,
     periodText,
     currency,
     columns,
@@ -135,14 +164,14 @@ export async function exportReportToExcel(options: ExcelExportOptions): Promise<
     fnRow.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF475569' } };
   }
 
-  // Auto-fit column widths
+  // Auto-fit column widths safely without spreading large arrays onto call stack
   columns.forEach((col, idx) => {
     const sheetCol = sheet.getColumn(idx + 1);
-    const maxLen = Math.max(
-      col.header.length,
-      ...data.map((d) => String(d[col.key] ?? '').length),
-      col.width || 12
-    );
+    const maxContentLen = data.reduce((max, d) => {
+      const len = String(d[col.key] ?? '').length;
+      return len > max ? len : max;
+    }, 0);
+    const maxLen = Math.max(col.header.length, maxContentLen, col.width || 12);
     sheetCol.width = Math.min(maxLen + 4, 45);
   });
 

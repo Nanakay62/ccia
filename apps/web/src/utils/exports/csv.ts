@@ -8,7 +8,14 @@ export function generateCsv(
   rows: (string | number | bigint)[][]
 ): string {
   const escapeCell = (cell: string | number | bigint): string => {
-    const str = String(cell ?? '');
+    let str = String(cell ?? '');
+
+    // CWE-1236: Prevent CSV / Formula Injection in Microsoft Excel & Google Sheets
+    // Prefix risky characters (=, +, -, @, \t, \r) with a single quote '
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = `'${str}`;
+    }
+
     if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
@@ -35,4 +42,14 @@ export function downloadCsv(filename: string, content: string): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+export function exportReportToCSV(data: Record<string, any>[], filename: string): void {
+  if (!data || data.length === 0) return;
+  const first = data[0];
+  if (!first) return;
+  const headers = Object.keys(first);
+  const rows = data.map((item) => headers.map((h) => item[h] ?? ''));
+  const csvContent = generateCsv(headers, rows);
+  downloadCsv(filename, csvContent);
 }

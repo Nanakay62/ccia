@@ -9,6 +9,7 @@ import { LedgerProvider } from '../src/context/LedgerContext.js';
 import { SyncProvider } from '../src/context/SyncContext.js';
 import { SyncIndicator } from '../src/components/SyncIndicator.js';
 import { BackupRestoreCard } from '../src/components/settings/BackupRestoreCard.js';
+import { saveToStore, loadFromStore } from '../src/utils/database.js';
 
 describe('Phase 3: PowerSync Upload Connector & Rejection Routing', () => {
   it('processes valid transactions and clears them from upload batch', async () => {
@@ -153,7 +154,8 @@ describe('Phase 3: Web UI Sync & Backup Components', () => {
     expect(screen.getByText(/Closed period cannot receive new postings/i)).toBeDefined();
   });
 
-  it('renders BackupRestoreCard and provides multi-device simulation controls', async () => {
+  it('verifies offline simulation sandbox is strictly absent in live mode (Spec 5.4)', () => {
+    localStorage.removeItem('church_demo_mode');
     render(
       <AuthProvider>
         <DemoProvider>
@@ -168,6 +170,24 @@ describe('Phase 3: Web UI Sync & Backup Components', () => {
 
     expect(screen.getByText(/Encrypted Local Backups/i)).toBeDefined();
     expect(screen.getByText(/Export Encrypted Snapshot/i)).toBeDefined();
+    // Simulation sandbox must not exist in live mode
+    expect(screen.queryByText(/Multi-Device Offline Simulation Sandbox/i)).toBeNull();
+  });
+
+  it('renders simulation walkthrough in demo mode and runs offline scenarios', async () => {
+    localStorage.setItem('church_demo_mode', 'true');
+    render(
+      <AuthProvider>
+        <DemoProvider>
+          <LedgerProvider>
+            <SyncProvider>
+              <BackupRestoreCard />
+            </SyncProvider>
+          </LedgerProvider>
+        </DemoProvider>
+      </AuthProvider>
+    );
+
     expect(screen.getByText(/Multi-Device Offline Simulation Sandbox/i)).toBeDefined();
 
     // Run Non-Conflicting simulation
@@ -178,5 +198,26 @@ describe('Phase 3: Web UI Sync & Backup Components', () => {
       expect(screen.getByText(/SIMULATION START: Two devices go offline simultaneously/i)).toBeDefined();
       expect(screen.getByText(/DOCTOR STATUS: Trial balance is balanced/i)).toBeDefined();
     });
+
+    localStorage.removeItem('church_demo_mode');
+  });
+
+  it('correctly persists and restores negative BigInt values in isolated store', () => {
+    const testData = {
+      accountId: 'acct-overdrawn',
+      negativeBalance: -150000n,
+      journalLines: [
+        { debit: 0n, credit: -25000n },
+        { debit: -125000n, credit: 0n },
+      ],
+    };
+
+    saveToStore('test_negative_bigint', false, testData);
+    const restored = loadFromStore('test_negative_bigint', false, null as typeof testData | null);
+
+    expect(restored).not.toBeNull();
+    expect(restored?.negativeBalance).toBe(-150000n);
+    expect(restored?.journalLines[0]?.credit).toBe(-25000n);
+    expect(restored?.journalLines[1]?.debit).toBe(-125000n);
   });
 });

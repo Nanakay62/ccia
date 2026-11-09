@@ -6,6 +6,7 @@ import type {
 } from './types.js';
 import type { JournalEntry, JournalLine } from '../ledger/types.js';
 import { validateJournalEntry } from '../ledger/rules.js';
+import { convertLineToBaseCurrency } from '../money/index.js';
 
 export const GHS_STANDARD_DENOMINATIONS = [
   200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1,
@@ -62,7 +63,8 @@ export function validateTwoCounterSignOff(
   if (firstCounterId.trim() === secondCounterId.trim()) {
     return {
       valid: false,
-      error: 'Dual-control violation: Two distinct counters are required to sign off service collections.',
+      error:
+        'Dual-control violation: Two distinct counters are required (the two signers must be different people).',
     };
   }
   return { valid: true };
@@ -124,10 +126,12 @@ export function generateJournalEntryFromCountingSheet(
 
   // 2. Debit Cash on Hand (USD) if USD cash received
   if (sheet.totalCashUsdCents > 0n) {
-    // Convert USD cents to GHS pesewas at exchange rate
-    // e.g. 10000 cents ($100.00) * 15.50 = 155,000 pesewas (GHS 1,550.00)
-    const rateFloat = parseFloat(rateUsd);
-    const ghsBasePesewas = BigInt(Math.round(Number(sheet.totalCashUsdCents) * rateFloat));
+    const usdConv = convertLineToBaseCurrency(
+      sheet.totalCashUsdCents,
+      'USD',
+      rateUsd
+    );
+    const ghsBasePesewas = usdConv.baseAmountGhs;
 
     lines.push({
       id: `line-${sheet.id}-cash-usd`,
@@ -138,10 +142,10 @@ export function generateJournalEntryFromCountingSheet(
       description: `Service Offering Cash (USD) - ${sheet.serviceType} ($${(Number(sheet.totalCashUsdCents) / 100).toFixed(2)})`,
       originalCurrency: 'USD',
       originalAmount: sheet.totalCashUsdCents,
-      exchangeRate: rateUsd,
+      exchangeRate: usdConv.exchangeRate,
       debitAmountGhs: ghsBasePesewas,
       creditAmountGhs: 0n,
-      roundingDifferencePesewas: 0n,
+      roundingDifferencePesewas: usdConv.roundingDifference,
     });
   }
 
@@ -210,9 +214,60 @@ export function generateJournalEntryFromCountingSheet(
     });
   }
 
+  // 6. Fund Accounting: If allocations are made to funds other than defaultFundId,
+  // insert balancing interfund clearing lines (Account 2020: Interfund Due To / Due From)
+  // so that every fund is individually in double-entry balance.
+  const otherFundAllocations = new Map<string, bigint>();
+  for (const alloc of sheet.fundAllocations) {
+    if (alloc.fundId !== defaultFundId && alloc.amountPesewas > 0n) {
+      const cur = otherFundAllocations.get(alloc.fundId) || 0n;
+      otherFundAllocations.set(alloc.fundId, cur + alloc.amountPesewas);
+    }
+  }
+
+  for (const [otherFundId, amount] of otherFundAllocations.entries()) {
+    // Default fund owes the other fund: Credit Due To (2020) under defaultFundId
+    lines.push({
+      id: `line-${sheet.id}-interfund-cr-${otherFundId}`,
+      journalEntryId: sheet.id,
+      accountId: 'acct-2020', // Interfund Due To / Due From
+      fundId: defaultFundId,
+      lineNumber: lineNumber++,
+      description: `Interfund Clearing: Due to ${otherFundId} for ${sheet.serviceType}`,
+      originalCurrency: 'GHS',
+      originalAmount: amount,
+      exchangeRate: '1.0000',
+      debitAmountGhs: 0n,
+      creditAmountGhs: amount,
+      roundingDifferencePesewas: 0n,
+    });
+
+    // Other fund is owed by default fund: Debit Due From (2020) under otherFundId
+    lines.push({
+      id: `line-${sheet.id}-interfund-dr-${otherFundId}`,
+      journalEntryId: sheet.id,
+      accountId: 'acct-2020', // Interfund Due To / Due From
+      fundId: otherFundId,
+      lineNumber: lineNumber++,
+      description: `Interfund Clearing: Due from ${defaultFundId} for ${sheet.serviceType}`,
+      originalCurrency: 'GHS',
+      originalAmount: amount,
+      exchangeRate: '1.0000',
+      debitAmountGhs: amount,
+      creditAmountGhs: 0n,
+      roundingDifferencePesewas: 0n,
+    });
+  }
+
   // Compute control totals
   const totalDebitGhs = lines.reduce((acc, l) => acc + l.debitAmountGhs, 0n);
   const totalCreditGhs = lines.reduce((acc, l) => acc + l.creditAmountGhs, 0n);
+
+  // Format all counter names for narration (supports 2, 3, 4, 5+ counters)
+  const allCountersStr =
+    sheet.counters && sheet.counters.length > 0
+      ? sheet.counters.map((c) => c.name).join(', ')
+      : `${sheet.firstCounterName} & ${sheet.secondCounterName}`;
 
   const entry: JournalEntry = {
     id: sheet.id,
@@ -220,7 +275,7 @@ export function generateJournalEntryFromCountingSheet(
     documentNumber,
     entryDate: sheet.serviceDate,
     entryType: 'STANDARD',
-    narration: `${sheet.serviceType} Collection Sign-off (Counters: ${sheet.firstCounterName} & ${sheet.secondCounterName})`,
+    narration: `${sheet.serviceType} Collection Sign-off (Counters: ${allCountersStr})`,
     lineCount: lines.length,
     totalDebitGhs,
     totalCreditGhs,

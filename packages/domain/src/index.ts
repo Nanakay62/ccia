@@ -14,4 +14,12 @@ export * from './expenses/index.js';
 export * from './reports/index.js';
 export * from './budgets/index.js';
 export * from './payroll/index.js';
+export * from './cashbook/index.js';
+export * from './tithes/index.js';
+export * from './assets/index.js';
 export * from './demo/index.js';
+export * from './yearend/index.js';
+export * from './cutover/index.js';
+export * from './security/index.js';
+export * from './approvals/index.js';
+

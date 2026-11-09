@@ -11,12 +11,12 @@ import {
   Download,
   Printer,
   Search,
-  FileText,
   ChevronRight,
 } from 'lucide-react';
-import { USER_MANUAL_CHAPTERS, downloadUserManualWord, printUserManualPdf } from '../../utils/exports/userManualGenerator.js';
+import { USER_MANUAL_CHAPTERS, printUserManualPdf, downloadUserManualWord } from '../../utils/exports/userManualGenerator.js';
 import { useModalEscape } from '../../utils/useModalEscape.js';
 import { useDemo } from '../../context/DemoContext.js';
+import { defaultChurchSettings } from '../../config/churchSettings.js';
 
 interface UserManualModalProps {
   isOpen: boolean;
@@ -64,52 +64,42 @@ export const UserManualModal: React.FC<UserManualModalProps> = ({ isOpen, onClos
                 <h2 className="font-serif text-[17px] font-bold text-[var(--text-primary)] leading-tight">
                   CCIA Church Accounting Platform — User Manual
                 </h2>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-subtle)] text-[var(--accent)] border border-[var(--accent)]/30">
-                  v2.0 GHS/USD
+                <span className="text-[12px] text-[var(--text-muted)] font-medium">
+                  v2.0
                 </span>
               </div>
               <p className="text-[12px] text-[var(--text-muted)]">
-                Accra Central Grace Chapel • Standard Operating Procedures & User Guide
+                {defaultChurchSettings.churchName} • Standard Operating Procedures & User Guide
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Word Export Button */}
-            <button
-              onClick={() => downloadUserManualWord(isDemoMode)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] bg-[var(--surface-panel)] hover:bg-[var(--surface-border-subtle)] border border-[var(--surface-border)] text-[12px] font-semibold text-[var(--text-primary)] transition"
-              title="Download editable Microsoft Word document (.doc)"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-600" />
-              <span className="hidden sm:inline">Word Guide (.doc)</span>
-            </button>
-
-            {/* PDF Export Button */}
+            {/* Open / Print PDF Manual */}
             <button
               onClick={() => printUserManualPdf(isDemoMode)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-[12px] font-semibold transition"
-              title="Print or save as formatted PDF document"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] bg-[var(--surface-subtle)] hover:bg-[var(--surface-border)] border border-[var(--surface-border)] text-[var(--text-primary)] text-[12px] font-semibold transition"
+              title="Open printable manual"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Print / PDF Guide</span>
+              <Printer className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+              <span>Open</span>
             </button>
 
-            {/* Direct Link to Pre-compiled PDF */}
+            {/* Download PDF */}
             <a
               href="/docs/CCIA_Church_Accounting_Platform_User_Manual.pdf"
               download="CCIA_Church_Accounting_Platform_User_Manual.pdf"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] bg-[var(--surface-panel)] hover:bg-[var(--surface-border-subtle)] border border-[var(--surface-border)] text-[12px] font-semibold text-[var(--text-primary)] transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] bg-[var(--accent)] hover:opacity-90 text-white text-[12px] font-semibold transition"
               title="Download compiled standalone PDF document"
             >
-              <FileText className="w-3.5 h-3.5 text-rose-600" />
-              <span className="hidden sm:inline">Download PDF</span>
+              <Download className="w-3.5 h-3.5" />
+              <span>Download PDF</span>
             </a>
 
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-[var(--radius)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition"
+              className="p-1.5 rounded-[var(--radius)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] transition ml-1"
               aria-label="Close user manual"
             >
               <X className="w-5 h-5" />

@@ -49,61 +49,70 @@ export function calculateGhanaPayeTax(taxableIncomePesewas: bigint): bigint {
     return 0n; // First GHS 490 is tax-free
   }
 
-  const taxableGhs = Number(taxableIncomePesewas) / 100;
-  let remaining = taxableGhs;
-  let taxGhs = 0;
+  // Exact decimal calculation in Ghana Cedis using Big.js without binary float imprecision
+  let remaining = new Big(taxableIncomePesewas.toString()).div(100);
+  let taxGhs = new Big(0);
 
   // Band 1: First 490 @ 0%
-  remaining -= 490;
+  remaining = remaining.minus(490);
 
   // Band 2: Next 110 @ 5%
-  if (remaining > 0) {
-    const chunk = Math.min(remaining, 110);
-    taxGhs += chunk * 0.05;
-    remaining -= chunk;
+  if (remaining.gt(0)) {
+    const chunk = remaining.gt(110) ? new Big(110) : remaining;
+    taxGhs = taxGhs.plus(chunk.times('0.05'));
+    remaining = remaining.minus(chunk);
   }
 
   // Band 3: Next 130 @ 10%
-  if (remaining > 0) {
-    const chunk = Math.min(remaining, 130);
-    taxGhs += chunk * 0.10;
-    remaining -= chunk;
+  if (remaining.gt(0)) {
+    const chunk = remaining.gt(130) ? new Big(130) : remaining;
+    taxGhs = taxGhs.plus(chunk.times('0.10'));
+    remaining = remaining.minus(chunk);
   }
 
   // Band 4: Next 3,166.67 @ 17.5%
-  if (remaining > 0) {
-    const chunk = Math.min(remaining, 3166.67);
-    taxGhs += chunk * 0.175;
-    remaining -= chunk;
+  if (remaining.gt(0)) {
+    const band4 = new Big('3166.67');
+    const chunk = remaining.gt(band4) ? band4 : remaining;
+    taxGhs = taxGhs.plus(chunk.times('0.175'));
+    remaining = remaining.minus(chunk);
   }
 
   // Band 5: Next 16,000 @ 25%
-  if (remaining > 0) {
-    const chunk = Math.min(remaining, 16000);
-    taxGhs += chunk * 0.25;
-    remaining -= chunk;
+  if (remaining.gt(0)) {
+    const band5 = new Big(16000);
+    const chunk = remaining.gt(band5) ? band5 : remaining;
+    taxGhs = taxGhs.plus(chunk.times('0.25'));
+    remaining = remaining.minus(chunk);
   }
 
   // Band 6: Next 30,520 @ 30%
-  if (remaining > 0) {
-    const chunk = Math.min(remaining, 30520);
-    taxGhs += chunk * 0.30;
-    remaining -= chunk;
+  if (remaining.gt(0)) {
+    const band6 = new Big(30520);
+    const chunk = remaining.gt(band6) ? band6 : remaining;
+    taxGhs = taxGhs.plus(chunk.times('0.30'));
+    remaining = remaining.minus(chunk);
   }
 
   // Band 7: Exceeding 50,416.67 @ 35%
-  if (remaining > 0) {
-    taxGhs += remaining * 0.35;
+  if (remaining.gt(0)) {
+    taxGhs = taxGhs.plus(remaining.times('0.35'));
   }
 
-  const taxBig = new Big(taxGhs).times(100);
+  const taxBig = taxGhs.times(100);
   return BigInt(taxBig.round(0, Big.roundHalfEven).toFixed(0));
 }
 
 /**
  * Calculates a single staff member's complete monthly payroll item.
  */
-export function calculatePayrollItem(staff: StaffMember): PayrollItem {
+export function calculatePayrollItem(
+  staff: StaffMember,
+  options?: {
+    taxOverridePesewas?: bigint;
+    taxOverrideReason?: string;
+  }
+): PayrollItem {
   const totalAllowancesPesewas =
     staff.housingAllowancePesewas +
     staff.transportAllowancePesewas +
@@ -120,7 +129,9 @@ export function calculatePayrollItem(staff: StaffMember): PayrollItem {
       ? grossSalaryPesewas - employeeSsnitPesewas
       : 0n;
 
-  const payeTaxPesewas = calculateGhanaPayeTax(taxableIncomePesewas);
+  const computedPaye = calculateGhanaPayeTax(taxableIncomePesewas);
+  const isOverridden = options?.taxOverridePesewas !== undefined;
+  const payeTaxPesewas = isOverridden ? options!.taxOverridePesewas! : computedPaye;
   const totalDeductionsPesewas = employeeSsnitPesewas + payeTaxPesewas;
   const netSalaryPesewas =
     grossSalaryPesewas > totalDeductionsPesewas
@@ -144,12 +155,15 @@ export function calculatePayrollItem(staff: StaffMember): PayrollItem {
     pastoralResponsibilityPesewas: staff.pastoralResponsibilityPesewas,
     totalAllowancesPesewas,
     grossSalaryPesewas,
+    taxableIncomePesewas,
     ssnitTier1EmployeePesewas: employeeSsnitPesewas,
     ssnitTier1EmployerPesewas: employerSsnitPesewas,
     payeTaxPesewas,
     totalDeductionsPesewas,
     netSalaryPesewas,
     paymentMethod,
+    taxOverridden: isOverridden,
+    taxOverrideReason: options?.taxOverrideReason,
   };
 }
 
@@ -165,6 +179,12 @@ export interface CreatePayrollRunInput {
   readonly bankAccountId: string;    // e.g. "acct-1030" Bank
   readonly staff: readonly StaffMember[];
   readonly authorizedBy?: string;
+  readonly status?: import('./types.js').PayrollStatus;
+  readonly preparedById?: string;
+  readonly preparedByName?: string;
+  readonly preparedAt?: string;
+  readonly rateTableVersion?: string;
+  readonly taxOverrides?: Record<string, { amountPesewas: bigint; reason: string }>;
 }
 
 /**
@@ -172,7 +192,13 @@ export interface CreatePayrollRunInput {
  */
 export function createPayrollRun(input: CreatePayrollRunInput): PayrollRun {
   const activeStaff = input.staff.filter((s) => s.isActive);
-  const items = activeStaff.map(calculatePayrollItem);
+  const items = activeStaff.map((s) => {
+    const override = input.taxOverrides?.[s.id];
+    return calculatePayrollItem(s, override ? {
+      taxOverridePesewas: override.amountPesewas,
+      taxOverrideReason: override.reason,
+    } : undefined);
+  });
 
   let totalBasic = 0n;
   let totalAllowances = 0n;
@@ -213,7 +239,11 @@ export function createPayrollRun(input: CreatePayrollRunInput): PayrollRun {
     totalPayePesewas: totalPaye,
     totalNetPayPesewas: totalNetPay,
     totalPayrollCostPesewas: totalPayrollCost,
-    status: input.authorizedBy ? 'APPROVED' : 'DRAFT',
+    status: input.status ?? (input.authorizedBy ? 'APPROVED' : 'DRAFT'),
+    preparedById: input.preparedById,
+    preparedByName: input.preparedByName,
+    preparedAt: input.preparedAt,
+    rateTableVersion: input.rateTableVersion ?? 'GRA-SSNIT-2026-v1',
     authorizedBy: input.authorizedBy,
     authorizedAt: input.authorizedBy ? new Date().toISOString() : undefined,
   };
@@ -363,8 +393,8 @@ export function generateStaffPayslip(params: {
     payrollRun,
     item,
     staff,
-    churchName = 'Accra Central Grace Chapel',
-    branchName = 'Accra Main Branch',
+    churchName = 'Calvary Crystal Church',
+    branchName = 'Main Branch',
   } = params;
 
   const monthNames = [

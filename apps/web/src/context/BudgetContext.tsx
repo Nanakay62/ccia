@@ -14,6 +14,7 @@ import {
 import { useAuth } from './AuthContext.js';
 import { useLedger } from './LedgerContext.js';
 import { useSync } from './SyncContext.js';
+import { defaultChurchSettings } from '../config/churchSettings.js';
 
 export interface BudgetContextValue {
   readonly budgets: readonly Budget[];
@@ -52,7 +53,7 @@ export const INITIAL_BUDGET: Budget = createBudget({
   year: 2026,
   fundId: 'fund-gen',
   fundName: 'General Fund',
-  title: 'Accra Central Grace Chapel — Approved 2026 Operating Budget',
+  title: `${defaultChurchSettings.churchName} — Approved 2026 Operating Budget`,
   approvedBy: 'Elder Kofi Mensah (Treasurer)',
   lines: [
     { accountId: 'acct-4010', accountCode: '4010', accountName: 'Tithes', category: 'INCOME', annualAmountPesewas: 18000000n, notes: 'Target based on 300 active giving members' },

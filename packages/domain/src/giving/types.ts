@@ -1,11 +1,22 @@
 import type { Currency } from '../money/index.js';
 
 export type ServiceType =
+  | 'Sunday Service'
+  | 'Midweek Service (Wednesday Evening)'
+  | 'Grace Thursday'
+  | 'Friday Evening Service'
+  | 'Special Thanksgiving'
   | 'Sunday 1st Service'
   | 'Sunday 2nd Service'
   | 'Midweek Service'
-  | 'Youth Service'
-  | 'Special Thanksgiving';
+  | 'Youth Service';
+
+export interface CounterProfile {
+  readonly id: string;
+  readonly name: string;
+  readonly role?: string;
+  readonly isPermanent: boolean;
+}
 
 export type MoMoNetwork = 'MTN' | 'VODAFONE' | 'AIRTELTIGO';
 
@@ -25,13 +36,16 @@ export interface Member {
   readonly branchId: string;
   readonly memberNumber: string; // e.g. "MEM-001"
   readonly envelopeNumber?: string; // e.g. "ENV-042"
+  readonly title?: string; // e.g. "Deacon", "Sister", "Brother", "Elder", "Rev.", "Pastor", "Dr."
+  readonly firstName?: string;
+  readonly lastName?: string;
   readonly fullName: string;
   readonly phone?: string;
   readonly phoneHint?: string; // Last 3 digits for privacy lookup
   readonly email?: string;
   readonly familyGroup?: string; // e.g. "Mensah Family"
   readonly department?: string; // e.g. "Choir", "Youth", "Ushers"
-  readonly status: 'ACTIVE' | 'INACTIVE' | 'VISITOR';
+  readonly status: 'ACTIVE' | 'INACTIVE' | 'TRANSFERRED' | 'DECEASED' | 'VISITOR';
   readonly joinDate?: string;
   readonly rowVersion: number;
 }
@@ -83,6 +97,14 @@ export interface FundAllocationLine {
   readonly currency: Currency;
 }
 
+export interface SheetCounterSignOff {
+  readonly id: string;
+  readonly name: string;
+  readonly isPermanent?: boolean;
+  readonly role?: string;
+  readonly signedAt?: string;
+}
+
 export interface CountingSheet {
   readonly id: string;
   readonly branchId: string;
@@ -100,6 +122,7 @@ export interface CountingSheet {
   readonly secondCounterId?: string;
   readonly secondCounterName?: string;
   readonly secondSignedAt?: string;
+  readonly counters?: readonly SheetCounterSignOff[]; // Supports dynamic multi-counter teams (2, 3, 4, 5+ counters)
   readonly status: 'DRAFT' | 'SUBMITTED' | 'POSTED';
   readonly totalCashGhsPesewas: bigint;
   readonly totalCashUsdCents: bigint;
@@ -128,6 +151,11 @@ export interface MemberGivingRecord {
   readonly countingSheetId?: string;
   readonly notes?: string;
   readonly createdAt: string;
+  readonly recordedBy?: string;
+  readonly isReversed?: boolean;
+  readonly reversalReason?: string;
+  readonly reversedAt?: string;
+  readonly reversedBy?: string;
 }
 
 export interface PrintableReceipt {

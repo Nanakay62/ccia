@@ -3,14 +3,17 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  worker: {
+    format: 'es',
+  },
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Church Accounting System (Accra)',
-        short_name: 'ChurchAccounts',
+        name: 'Calvary Crystal Church Accounting',
+        short_name: 'CalvaryCrystal',
         description: 'Offline-first double-entry accounting PWA for church financial administration',
         theme_color: '#1e3a8a',
         background_color: '#ffffff',
@@ -29,6 +32,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,wasm}'],
         runtimeCaching: [
           {
